@@ -1,0 +1,76 @@
+{
+  "name": "telegallery",
+  "version": "1.0.0",
+  "description": "TeleGallery - Google Photos experience backed by Telegram unlimited storage",
+  "main": "dist/main/src/main/main.js",
+  "scripts": {
+    "dev": "npx kill-port 5173 --silent 2>nul & concurrently -k \"cross-env VITE_DEV_SERVER_URL=http://localhost:5173 vite --port 5173 --strictPort\" \"tsc -p tsconfig.node.json -w\" \"wait-on tcp:5173 && wait-on dist/main/src/main/main.js && electron .\"",
+    "build": "tsc -p tsconfig.node.json && vite build",
+    "package": "npm run build && electron-builder build --win",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yadavallitejas/TeleDrive.git"
+  },
+  "author": "Yadavallitejas",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "chokidar": "^5.0.0",
+    "dotenv": "^17.4.2",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
+    "lucide-react": "^0.454.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0",
+    "sharp": "^0.34.5",
+    "tailwindcss-animate": "^1.0.7",
+    "telegram": "^2.26.22",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.5",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^36.9.5",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9.13.0",
+    "postcss": "^8.4.47",
+    "prettier": "^3.3.3",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^8.0.11",
+    "vitest": "^4.1.5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.telegallery.app",
+    "productName": "TeleGallery",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    }
+  }
+}
