@@ -4,6 +4,7 @@ import { X, CheckCircle2, Clock, UploadCloud, AlertCircle, RefreshCw } from 'luc
 interface UploadItem {
   fileId: string;
   filePath?: string;
+  filename?: string;
   status: string;
   progress: number;
   speed: string;
@@ -125,11 +126,11 @@ export default function UploadQueue() {
                   ) : (
                     <Clock size={14} className="text-primary animate-pulse shrink-0" />
                   )}
-                  <span className="text-xs font-medium truncate w-44 text-foreground" title={item.fileId}>
+                  <span className="text-xs font-medium truncate w-44 text-foreground" title={item.filename || item.fileId}>
                     {item.status === 'Error' ? (
                       <span className="text-red-500">{item.error || 'Upload failed'}</span>
                     ) : (
-                      item.status
+                      item.filename || item.status
                     )}
                   </span>
                 </div>

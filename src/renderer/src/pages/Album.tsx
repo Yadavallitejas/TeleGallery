@@ -6,12 +6,16 @@ export default function Album() {
   const [albums, setAlbums] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
     loadAlbums();
+    // Refresh album list when a photo upload completes (e.g. newly uploaded photo added to album)
+    const handler = window.electronAPI.onUploadComplete(() => loadAlbums());
+    return () => window.electronAPI.offUploadComplete(handler);
   }, []);
 
   const loadAlbums = async () => {
@@ -20,12 +24,17 @@ export default function Album() {
   };
 
   const handleCreate = async () => {
-    if (!newAlbumName.trim()) return;
-    const { success } = await window.electronAPI.createAlbum(newAlbumName.trim());
-    if (success) {
-      setNewAlbumName('');
-      setIsCreating(false);
-      loadAlbums();
+    if (!newAlbumName.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const { success } = await window.electronAPI.createAlbum(newAlbumName.trim());
+      if (success) {
+        setNewAlbumName('');
+        setIsCreating(false);
+        loadAlbums();
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -77,12 +86,12 @@ export default function Album() {
             autoFocus
             className="flex-1 bg-background border border-border rounded-lg px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             onKeyDown={e => {
-              if (e.key === 'Enter') handleCreate();
+              if (e.key === 'Enter' && !isSubmitting) handleCreate();
               if (e.key === 'Escape') setIsCreating(false);
             }}
           />
-          <button onClick={handleCreate} disabled={!newAlbumName.trim()} className="px-4 py-2 bg-primary text-white rounded-lg disabled:opacity-50">
-            Create
+          <button onClick={handleCreate} disabled={!newAlbumName.trim() || isSubmitting} className="px-4 py-2 bg-primary text-white rounded-lg disabled:opacity-50">
+            {isSubmitting ? 'Creating…' : 'Create'}
           </button>
           <button onClick={() => setIsCreating(false)} className="px-4 py-2 text-muted hover:bg-black/5 rounded-lg">
             Cancel

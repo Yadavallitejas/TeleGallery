@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Trash2, Edit2, Image as ImageIcon, Star } from 'lucide-react';
 import PhotoViewer from '../components/PhotoViewer';
@@ -81,12 +81,8 @@ export default function AlbumDetail() {
       
       currentGroup.photos.push({
         id: row.id,
-        url: row.local_thumb_path
-          ? 'file://' + row.local_thumb_path.replace(/\\/g, '/')
-          : null,
-        thumb_url: row.local_thumb_path
-          ? 'file://' + row.local_thumb_path.replace(/\\/g, '/')
-          : null,
+        url: row.thumb_url || null,
+          thumb_url: row.thumb_url || null,
         date: dateStr,
         width: row.width,
         height: row.height,

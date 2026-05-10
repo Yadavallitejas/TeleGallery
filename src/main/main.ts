@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, Notification, safeStorage, session, shell } from 'electron';
+﻿import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, Notification, safeStorage, session, shell, protocol, net } from 'electron';
 import * as path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
@@ -30,6 +30,12 @@ async function loadGramJS() {
 }
 
 const isDev = !app.isPackaged;
+
+// Register thumb:// as a privileged scheme before app is ready
+// This lets the renderer load local thumbnails without file:// CSP issues
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'thumb', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: false } }
+]);
 
 process.on('uncaughtException', (err) => {
   const logPath = path.join(app.getPath('userData'), 'crash.log');
@@ -89,13 +95,13 @@ function notifySync(count: number) {
   }, 2000);
 }
 
-// â”€â”€â”€ Master Index structure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Master Index structure Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 const CHANNEL_TITLE = 'TeleGallery_Storage';
 const CHANNEL_DESCRIPTION = 'TeleGallery app storage - do not delete';
-/** Stores { id: string, accessHash: string } as JSON â€” both values required for Telegram API */
+/** Stores { id: string, accessHash: string } as JSON Ã¢â‚¬â€ both values required for Telegram API */
 const STORE_KEY_CHANNEL = 'tg-storage-channel';
-/** Legacy key â€” kept only for one-time migration during tg-setup-storage */
+/** Legacy key Ã¢â‚¬â€ kept only for one-time migration during tg-setup-storage */
 const STORE_KEY_CHANNEL_ID = 'tg-storage-channel-id';
 const STORE_KEY_SESSION = 'tg-session';
 
@@ -123,7 +129,7 @@ function buildFreshIndex(): MasterIndex {
   };
 }
 
-// â”€â”€â”€ Telegram helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Telegram helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function getApiCredentials() {
   const envApiId = process.env.TELEGRAM_API_ID;
@@ -177,7 +183,7 @@ function mapTelegramError(err: any): string {
   return `Unexpected error: ${msg}`;
 }
 
-// â”€â”€â”€ Storage channel helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Storage channel helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 /** Sends a progress event to the renderer. */
 function sendProgress(step: number, total: number, current: number, label: string) {
@@ -220,7 +226,7 @@ async function getStorageChannel(): Promise<any> {
   // Legacy migration: old store used only the id string
   const legacyId = store.get(STORE_KEY_CHANNEL_ID) as string | undefined;
 
-  // Live lookup â€” find the entity and persist it properly this time
+  // Live lookup Ã¢â‚¬â€ find the entity and persist it properly this time
   const entity = await findStorageChannel();
   if (!entity) throw new Error('TeleGallery_Storage channel not found. Please re-run setup.');
   saveStorageChannel(entity);
@@ -282,7 +288,7 @@ async function writeMasterIndex(channelInput: any, index: MasterIndex): Promise<
     // Already a full entity
     channel = channelInput;
   } else {
-    // BigInt id fallback â€” reconstruct via getStorageChannel
+    // BigInt id fallback Ã¢â‚¬â€ reconstruct via getStorageChannel
     const inputCh = await getStorageChannel();
     const result = await tgClient.invoke(new Api.channels.GetChannels({ id: [inputCh] }));
     channel = result.chats[0];
@@ -382,7 +388,7 @@ async function restoreFromIndex(index: MasterIndex): Promise<void> {
   const totalSteps = index.albums.length + 1; // albums + settings
   let step = 0;
 
-  sendProgress(step, totalSteps, 0, 'Reading your libraryâ€¦');
+  sendProgress(step, totalSteps, 0, 'Reading your libraryÃ¢â‚¬Â¦');
   await delay(300); // small pause so UI shows the first step
 
   // Restore settings
@@ -399,7 +405,7 @@ async function restoreFromIndex(index: MasterIndex): Promise<void> {
     index.last_synced
   );
   step++;
-  sendProgress(step, totalSteps, 0, 'Restoring settingsâ€¦');
+  sendProgress(step, totalSteps, 0, 'Restoring settingsÃ¢â‚¬Â¦');
   await delay(200);
 
   // Restore albums
@@ -417,7 +423,7 @@ async function restoreFromIndex(index: MasterIndex): Promise<void> {
       updated_at: Math.floor(Date.now() / 1000) 
     });
     step++;
-    sendProgress(step, totalSteps, album.count, `Restoring album "${album.name}"â€¦`);
+    sendProgress(step, totalSteps, album.count, `Restoring album "${album.name}"Ã¢â‚¬Â¦`);
     await delay(150);
   }
 
@@ -442,7 +448,7 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-// â”€â”€â”€ Window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Window Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 function createWindow() {
   // Remove default Electron menu (File, Edit, View, Window, Help)
@@ -493,7 +499,7 @@ function createWindow() {
     }
   });
 
-  // Fix 9: Block any attempt to open new browser windows â€” all navigation is in-app
+  // Fix 9: Block any attempt to open new browser windows Ã¢â‚¬â€ all navigation is in-app
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   if (isDev) {
@@ -508,20 +514,38 @@ function setupDatabase() {
   DatabaseService.getInstance().init();
 }
 
-// â”€â”€â”€ App lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ App lifecycle Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 app.whenReady().then(() => {
-  // Only apply strict CSP in production â€” in dev Vite needs to inject scripts
+  // Only apply strict CSP in production Ã¢â‚¬â€ in dev Vite needs to inject scripts
   if (!isDev) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
-          'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: ws: wss:;"]
+          'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' thumb: data: blob: https:; connect-src 'self' https: ws: wss:;"]
         }
       });
     });
   }
+
+  // Register thumb:// protocol handler â€” serves files ONLY from thumbcache directory
+  protocol.handle('thumb', async (request) => {
+    try {
+      // URL format: thumb://local/<photoId>.jpg
+      const url = new URL(request.url);
+      const filename = decodeURIComponent(url.pathname.replace(/^\//,''));
+      const thumbCacheDir = path.join(app.getPath('userData'), 'thumbcache');
+      // Security: only serve files directly inside thumbcache (no path traversal)
+      const absPath = path.resolve(thumbCacheDir, path.basename(filename));
+      if (!absPath.startsWith(thumbCacheDir)) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      return net.fetch('file:///' + absPath.replace(/\\\\/g, '/'));
+    } catch {
+      return new Response('Not Found', { status: 404 });
+    }
+  });
 
   setupDatabase();
   createWindow();
@@ -565,7 +589,7 @@ app.on('before-quit', async () => {
   }
 });
 
-// â”€â”€â”€ Fix 5: Auto-Sync Folder Watcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Fix 5: Auto-Sync Folder Watcher Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Watches user-configured folders with chokidar. Per-file 3-second debounce
 // prevents duplicate queuing from rapid OS events (e.g. camera transfer bursts).
 // Authorisation is checked before every upload to handle session expiry.
@@ -590,7 +614,7 @@ async function updateSyncFolderWatcher() {
   }
 
   if (!autoSync || allFolders.length === 0) {
-    console.log('[watcher] Auto-sync disabled or no folders â€” watcher stopped.');
+    console.log('[watcher] Auto-sync disabled or no folders Ã¢â‚¬â€ watcher stopped.');
     return;
   }
 
@@ -638,7 +662,7 @@ async function updateSyncFolderWatcher() {
         }
         const isAuthorized = await tgClient.isUserAuthorized().catch(() => false);
         if (!isAuthorized) {
-          console.warn('[watcher] Session expired â€” skipping auto-upload of', filePath);
+          console.warn('[watcher] Session expired Ã¢â‚¬â€ skipping auto-upload of', filePath);
           return;
         }
 
@@ -653,11 +677,58 @@ async function updateSyncFolderWatcher() {
 
   fileWatcher.on('error', (err: any) => console.error('[watcher] Chokidar error:', err));
   console.log(`[watcher] Watching ${allFolders.length} folder(s):`, allFolders);
+
+  // Initial scan: upload any files already in folders that aren't yet in the DB.
+  // Delayed by 8s so the Telegram client has time to connect on app startup.
+  setTimeout(async () => {
+    const VALID_EXTS_INIT = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.mp4', '.mov', '.avi', '.mkv']);
+    const db = DatabaseService.getInstance();
+    const toUpload: string[] = [];
+
+    const scanExisting = async (dir: string) => {
+      let entries: import('fs').Dirent[];
+      try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await scanExisting(fullPath);
+        } else if (entry.isFile() && VALID_EXTS_INIT.has(path.extname(entry.name).toLowerCase())) {
+          try {
+            const stat = await fs.stat(fullPath);
+            const exists = db.get<{ id: string }>(
+              'SELECT id FROM photos WHERE filename = ? AND size_bytes = ?',
+              path.basename(fullPath), stat.size
+            );
+            if (!exists) toUpload.push(fullPath);
+          } catch { /* skip */ }
+        }
+      }
+    };
+
+    for (const folder of allFolders) {
+      await scanExisting(folder).catch(e => console.warn('[watcher] Initial scan error:', folder, e));
+    }
+
+    if (toUpload.length > 0) {
+      console.log(`[watcher] Initial scan found ${toUpload.length} unsynced file(s) â€” queuing upload`);
+      // Ensure client is alive
+      if (!tgClient) {
+        const savedSession = store.get(STORE_KEY_SESSION, '') as string;
+        if (savedSession) tgClient = await getTelegramClient(savedSession).catch(() => null);
+      }
+      if (tgClient) {
+        const authorized = await tgClient.isUserAuthorized().catch(() => false);
+        if (authorized) await runUploadQueue(toUpload);
+      }
+    } else {
+      console.log('[watcher] Initial scan: all existing files already synced.');
+    }
+  }, 8000);
 }
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 
-// â”€â”€â”€ Generic IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Generic IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('get-setting', (_event, key: string) => store.get(key));
 ipcMain.handle('set-setting', (_event, key: string, value: any) => {
@@ -666,7 +737,7 @@ ipcMain.handle('set-setting', (_event, key: string, value: any) => {
     updateSyncFolderWatcher();
   }
 });
-// â”€â”€â”€ Telegram auth IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Telegram auth IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-check-auth', async () => {
   try {
@@ -725,7 +796,7 @@ ipcMain.handle(
       } catch (signInErr: any) {
         const msg: string = signInErr?.message ?? String(signInErr);
         if (msg.includes('SESSION_PASSWORD_NEEDED')) {
-          // Account has 2FA â€” don't save session yet, tell renderer to ask for password
+          // Account has 2FA Ã¢â‚¬â€ don't save session yet, tell renderer to ask for password
           return { needs2FA: true };
         }
         throw signInErr;
@@ -796,14 +867,14 @@ ipcMain.handle('tg-sign-out', async () => {
   }
 });
 
-// â”€â”€â”€ Storage setup IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Storage setup IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 /**
  * tg-setup-storage
  *
  * Called immediately after a successful login (or on every app launch when
  * the user is already authenticated).  Finds or creates the private storage
- * channel, pins the master index, and â€” when restoring â€” streams progress
+ * channel, pins the master index, and Ã¢â‚¬â€ when restoring Ã¢â‚¬â€ streams progress
  * events back to the renderer via 'tg-restore-progress'.
  *
  * Returns:
@@ -821,22 +892,22 @@ ipcMain.handle('tg-setup-storage', async () => {
 
     await loadGramJS();
 
-    sendProgress(0, 4, 0, 'Looking for your storage channelâ€¦');
+    sendProgress(0, 4, 0, 'Looking for your storage channelÃ¢â‚¬Â¦');
     await delay(300);
 
     let channel = await findStorageChannel();
     let channelIdStr: string;
 
     if (!channel) {
-      // â”€â”€ First-ever launch: create channel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      sendProgress(1, 4, 0, 'Creating private storage channelâ€¦');
+      // Ã¢â€â‚¬Ã¢â€â‚¬ First-ever launch: create channel Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+      sendProgress(1, 4, 0, 'Creating private storage channelÃ¢â‚¬Â¦');
       await delay(200);
 
       channel = await createStorageChannel();
       channelIdStr = channel.id.toString();
       saveStorageChannel(channel); // persists id + accessHash
 
-      sendProgress(2, 4, 0, 'Writing master indexâ€¦');
+      sendProgress(2, 4, 0, 'Writing master indexÃ¢â‚¬Â¦');
       await delay(200);
 
       const index = buildFreshIndex();
@@ -847,17 +918,17 @@ ipcMain.handle('tg-setup-storage', async () => {
 
       return { status: 'created', channelId: channelIdStr };
     } else {
-      // â”€â”€ Returning user / device switch: read & restore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // Ã¢â€â‚¬Ã¢â€â‚¬ Returning user / device switch: read & restore Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
       channelIdStr = channel.id.toString();
       saveStorageChannel(channel); // always refresh persisted hash
 
-      sendProgress(1, 4, 0, 'Found your channel. Reading indexâ€¦');
+      sendProgress(1, 4, 0, 'Found your channel. Reading indexÃ¢â‚¬Â¦');
       await delay(200);
 
       const index = await readMasterIndex(channel);
 
       if (!index) {
-        // Channel exists but no pinned index â€” write a fresh one
+        // Channel exists but no pinned index Ã¢â‚¬â€ write a fresh one
         const freshIndex = buildFreshIndex();
         await writeMasterIndex(channel, freshIndex);
         sendProgress(4, 4, 0, 'Storage ready!');
@@ -865,7 +936,7 @@ ipcMain.handle('tg-setup-storage', async () => {
         return { status: 'created', channelId: channelIdStr };
       }
 
-      sendProgress(2, 4, index.total_photos, 'Restoring your libraryâ€¦');
+      sendProgress(2, 4, index.total_photos, 'Restoring your libraryÃ¢â‚¬Â¦');
       await delay(200);
 
       await restoreFromIndex(index);
@@ -878,7 +949,7 @@ ipcMain.handle('tg-setup-storage', async () => {
   }
 });
 
-// â”€â”€â”€ Data Access IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Data Access IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-get-photos', () => {
   try {
@@ -888,7 +959,7 @@ ipcMain.handle('tg-get-photos', () => {
     return rows.map(row => ({
       ...row,
       thumb_url: row.local_thumb_path
-        ? 'file://' + row.local_thumb_path.replace(/\\/g, '/')
+        ? 'thumb://local/' + encodeURIComponent(require('path').basename(row.local_thumb_path))
         : null,
       date_taken_iso: new Date(row.date_taken * 1000).toISOString(),
     }));
@@ -898,7 +969,7 @@ ipcMain.handle('tg-get-photos', () => {
   }
 });
 
-// â”€â”€â”€ File Upload IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ File Upload IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-select-files', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
@@ -982,8 +1053,8 @@ ipcMain.on('internal-upload', (_event, filePaths: string[]) => {
 
 
 // Used to notify UI of upload progress
-function sendUploadProgress(fileId: string, status: string, progress: number, speed: string = '') {
-  mainWindow?.webContents.send('tg-upload-progress', { fileId, status, progress, speed });
+function sendUploadProgress(fileId: string, status: string, progress: number, speed: string = '', filename: string = '') {
+  mainWindow?.webContents.send('tg-upload-progress', { fileId, status, progress, speed, filename });
 }
 
 async function runUploadQueue(filePaths: string[]) {
@@ -1053,12 +1124,13 @@ const startUploadQueue = runUploadQueue;
 async function processAndUploadFile(filePath: string, channelEntity: any, index: MasterIndex) {
   const fileId = crypto.randomUUID();
   const fileName = path.basename(filePath);
-  sendUploadProgress(fileId, 'Processing', 0);
+  sendUploadProgress(fileId, 'Processing', 0, '', fileName);
 
   try {
     const stat = await fs.stat(filePath);
     let width = 0;
     let height = 0;
+    let exifDateUnix = 0; // Will be set from EXIF if available
 
     // a. Generate Thumbnail and save to persistent thumbcache (NOT uploaded to Telegram)
     const thumbCacheDir = path.join(app.getPath('userData'), 'thumbcache');
@@ -1069,6 +1141,25 @@ async function processAndUploadFile(filePath: string, channelEntity: any, index:
       const metadata = await sharp(filePath).metadata();
       width = metadata.width || 0;
       height = metadata.height || 0;
+
+      // Extract EXIF DateTimeOriginal for accurate capture date
+      // sharp exposes raw EXIF data; parse the DateTimeOriginal tag if present
+      if (metadata.exif) {
+        try {
+          // Parse EXIF buffer manually: look for DateTimeOriginal (0x9003) tag
+          // Format: 'YYYY:MM:DD HH:MM:SS'
+          const exifStr = metadata.exif.toString('binary');
+          const dtMatch = exifStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+          if (dtMatch) {
+            const [, yr, mo, dy, hh, mm, ss] = dtMatch;
+            const exifDate = new Date(`${yr}-${mo}-${dy}T${hh}:${mm}:${ss}`);
+            if (!isNaN(exifDate.getTime()) && exifDate.getTime() < Date.now()) {
+              exifDateUnix = Math.floor(exifDate.getTime() / 1000);
+            }
+          }
+        } catch { /* ignore EXIF parse errors */ }
+      }
+
       await sharp(filePath)
         .resize({ width: 400, height: 400, fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 80 })
@@ -1080,13 +1171,25 @@ async function processAndUploadFile(filePath: string, channelEntity: any, index:
     }
 
     // b. Upload ONLY the original file to Telegram (no separate thumb upload = no double message)
-    sendUploadProgress(fileId, 'Uploading', 20);
+    sendUploadProgress(fileId, 'Uploading', 20, '', fileName);
     const originalUploadResult = await uploadWithRetry(channelEntity, filePath, (progress: number) => {
-      sendUploadProgress(fileId, 'Uploading', 20 + (progress * 0.8));
+      sendUploadProgress(fileId, 'Uploading', 20 + (progress * 0.8), '', fileName);
     });
 
     // c. Build metadata for master index
-    const dateTakenUnix = Math.floor(stat.mtime.getTime() / 1000);
+    // Date priority: EXIF DateTimeOriginal > file birthtime (creation) > file mtime (last modified)
+    // Always clamp to now to handle corrupted future timestamps
+    const nowUnix = Math.floor(Date.now() / 1000);
+    let dateTakenUnix: number;
+    if (exifDateUnix > 0) {
+      dateTakenUnix = Math.min(exifDateUnix, nowUnix);
+    } else {
+      // Prefer birthtime (original creation) over mtime (last-modified / copy time)
+      const birthtimeUnix = Math.floor((stat.birthtimeMs || stat.mtimeMs) / 1000);
+      const mtimeUnix = Math.floor(stat.mtime.getTime() / 1000);
+      // Use the earlier of birthtime/mtime (the actual older date), clamped to now
+      dateTakenUnix = Math.min(Math.min(birthtimeUnix, mtimeUnix), nowUnix);
+    }
     const photoMeta = {
       id: fileId,
       filename: fileName,
@@ -1134,7 +1237,7 @@ async function processAndUploadFile(filePath: string, channelEntity: any, index:
     index.photos = index.photos || [];
     index.photos.push(photoMeta);
 
-    sendUploadProgress(fileId, 'Done', 100);
+    sendUploadProgress(fileId, 'Done', 100, '', fileName);
     // Emit new photo data so gallery refreshes immediately
     mainWindow?.webContents.send('tg-upload-complete');
     notifySync(1);
@@ -1179,9 +1282,70 @@ async function uploadWithRetry(channelEntity: any, filePath: string, onProgress:
   }
 }
 
-// â”€â”€â”€ Synchronization IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Synchronization IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 
 ipcMain.handle('tg-sync', async () => {
+  // Step 1: Scan sync folders and upload any local files NOT yet in the DB
+  const syncFolders = (store.get('sync_folders', []) as string[]);
+  const legacySyncFolder = store.get('sync_folder') as string | undefined;
+  const allSyncFolders = Array.from(new Set([...syncFolders, ...(legacySyncFolder ? [legacySyncFolder] : [])])).filter(Boolean);
+
+  if (allSyncFolders.length > 0) {
+    sendSyncProgress('Scanning sync foldersâ€¦', 5);
+    const VALID_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.mp4', '.mov', '.avi', '.mkv']);
+    const db = DatabaseService.getInstance();
+    const unsynced: string[] = [];
+
+    for (const folder of allSyncFolders) {
+      try {
+        // Recursively read the folder
+        const scanDir = async (dir: string) => {
+          let entries: import('fs').Dirent[];
+          try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              await scanDir(fullPath);
+            } else if (entry.isFile() && VALID_EXTS.has(path.extname(entry.name).toLowerCase())) {
+              try {
+                const stat = await fs.stat(fullPath);
+                const existing = db.get<{ id: string }>(
+                  'SELECT id FROM photos WHERE filename = ? AND size_bytes = ?',
+                  path.basename(fullPath), stat.size
+                );
+                if (!existing) unsynced.push(fullPath);
+              } catch { /* skip unreadable files */ }
+            }
+          }
+        };
+        await scanDir(folder);
+      } catch (e) {
+        console.warn('[sync] Could not scan folder:', folder, e);
+      }
+    }
+
+    if (unsynced.length > 0) {
+      sendSyncProgress(`Uploading ${unsynced.length} new file(s)â€¦`, 10);
+      // Re-use the upload pipeline (does Telegram auth check internally)
+      try {
+        // Ensure Telegram client is alive before upload
+        if (!tgClient) {
+          const savedSession = store.get(STORE_KEY_SESSION, '') as string;
+          if (savedSession) tgClient = await getTelegramClient(savedSession).catch(() => null);
+        }
+        if (tgClient) {
+          await runUploadQueue(unsynced);
+        }
+      } catch (e) {
+        console.error('[sync] Upload during sync failed:', e);
+      }
+    } else {
+      sendSyncProgress('All local files already synced', 15);
+    }
+  }
+
+  // Step 2: Pull master index from Telegram and update local DB
   return await syncFromTelegram();
 });
 
@@ -1191,10 +1355,24 @@ function sendSyncProgress(status: string, progress: number) {
 
 async function syncFromTelegram() {
   if (!DatabaseService.getInstance().db) return { success: false, error: 'DB not initialized' };
-  
-  const channelIdStr = store.get(STORE_KEY_CHANNEL_ID) as string;
-  if (!channelIdStr) return { success: false, error: 'No channel setup' };
-  
+
+  // Re-connect client if it is not alive (e.g. called from background auto-sync)
+  if (!tgClient) {
+    const savedSession = store.get(STORE_KEY_SESSION, '') as string;
+    if (!savedSession) return { success: false, error: 'Not authenticated' };
+    try {
+      tgClient = await getTelegramClient(savedSession);
+      const ok = await tgClient.isUserAuthorized();
+      if (!ok) return { success: false, error: 'Session expired' };
+    } catch (e: any) {
+      return { success: false, error: 'Could not connect: ' + e.message };
+    }
+  }
+
+  // Check that the channel has been set up (uses the current STORE_KEY_CHANNEL JSON key)
+  const rawChannel = store.get(STORE_KEY_CHANNEL) as string | undefined;
+  if (!rawChannel) return { success: false, error: 'No channel set up. Please complete setup first.' };
+
   try {
     sendSyncProgress('Connecting to Telegramâ€¦', 0);
     await loadGramJS();
@@ -1202,7 +1380,7 @@ async function syncFromTelegram() {
     const result = await tgClient.invoke(new Api.channels.GetChannels({ id: [inputCh] }));
     const channelEntity = result.chats[0];
 
-    sendSyncProgress('Reading master indexâ€¦', 10);
+    sendSyncProgress('Reading master indexÃ¢â‚¬Â¦', 10);
     const masterIndex = await readMasterIndex(channelEntity);
     
     if (!masterIndex) {
@@ -1219,7 +1397,7 @@ async function syncFromTelegram() {
       return { success: true, message: 'Up to date' };
     }
 
-    sendSyncProgress('Syncing metadataâ€¦', 30);
+    sendSyncProgress('Syncing metadataÃ¢â‚¬Â¦', 30);
     
     // Sync settings & albums via existing restore logic but quietly
     db.prepare("INSERT OR REPLACE INTO sync_state (key, value) VALUES ('theme', ?)").run(masterIndex.settings.theme);
@@ -1254,7 +1432,7 @@ async function syncFromTelegram() {
     }
     
     // Sync photos
-    sendSyncProgress('Syncing photosâ€¦', 50);
+    sendSyncProgress('Syncing photosÃ¢â‚¬Â¦', 50);
     if (masterIndex.photos && masterIndex.photos.length > 0) {
       const existingPhotos = new Set(
         (db.prepare('SELECT id FROM photos').all() as { id: string }[]).map(r => r.id)
@@ -1313,7 +1491,7 @@ async function syncFromTelegram() {
           );
         }
         if (i % 100 === 0) {
-          sendSyncProgress(`Synced ${i} photosâ€¦`, 50 + Math.floor((i / masterIndex.photos.length) * 40));
+          sendSyncProgress(`Synced ${i} photosÃ¢â‚¬Â¦`, 50 + Math.floor((i / masterIndex.photos.length) * 40));
         }
       }
       console.log(`Synced ${added} missing photos from Master Index.`);
@@ -1330,7 +1508,7 @@ async function syncFromTelegram() {
   }
 }
 
-// â”€â”€â”€ Albums IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Albums IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 async function updateMasterIndexAlbums(updater: (index: MasterIndex) => void) {
   await loadGramJS();
@@ -1364,7 +1542,7 @@ ipcMain.handle('tg-get-albums', () => {
     return (rows as any[]).map(row => ({
       ...row,
       cover_thumb_url: row.cover_local_thumb
-        ? 'file://' + row.cover_local_thumb.replace(/\\/g, '/')
+        ? 'thumb://local/' + encodeURIComponent(require('path').basename(row.cover_local_thumb))
         : null,
     }));
   } catch (err) {
@@ -1375,15 +1553,27 @@ ipcMain.handle('tg-get-albums', () => {
 
 ipcMain.handle('tg-create-album', async (_event, name: string) => {
   try {
+    if (typeof name !== 'string' || !name.trim()) return { success: false, error: 'Invalid name' };
+    const trimmedName = name.trim();
     const id = crypto.randomUUID();
     const db = DatabaseService.getInstance().db;
     const now = Math.floor(Date.now() / 1000);
+
+    // Server-side dedup: reject if same name was created within the last 5 seconds
+    // Catches rapid-fire IPC calls that slip past the UI isSubmitting guard
+    const recentDuplicate = db.prepare(
+      'SELECT id FROM albums WHERE name = ? AND created_at >= ?'
+    ).get(trimmedName, now - 5) as { id: string } | undefined;
+    if (recentDuplicate) {
+      console.warn('[tg-create-album] Dedup: returning existing album', recentDuplicate.id);
+      return { success: true, albumId: recentDuplicate.id };
+    }
     
     db.prepare('INSERT INTO albums (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
-      .run(id, name, now, now);
+      .run(id, trimmedName, now, now);
 
     await updateMasterIndexAlbums((index) => {
-      index.albums.push({ id, name, count: 0 });
+      index.albums.push({ id, name: trimmedName, count: 0 });
     });
     
     return { success: true, albumId: id };
@@ -1523,7 +1713,7 @@ ipcMain.handle('tg-set-album-cover', async (_event, albumId: string, photoId: st
   }
 });
 
-// â”€â”€â”€ Trash & Favorites Auto-delete and IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Trash & Favorites Auto-delete and IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 async function autoDeleteTrash() {
   try {
@@ -1590,7 +1780,7 @@ ipcMain.handle('tg-get-favorites', () => {
     return rows.map(row => ({
       ...row,
       thumb_url: row.local_thumb_path
-        ? 'file://' + row.local_thumb_path.replace(/\\/g, '/')
+        ? 'thumb://local/' + encodeURIComponent(require('path').basename(row.local_thumb_path))
         : null,
       date_taken_iso: new Date(row.date_taken * 1000).toISOString(),
     }));
@@ -1608,7 +1798,7 @@ ipcMain.handle('tg-get-trash', () => {
     return rows.map(row => ({
       ...row,
       thumb_url: row.local_thumb_path
-        ? 'file://' + row.local_thumb_path.replace(/\\/g, '/')
+        ? 'thumb://local/' + encodeURIComponent(require('path').basename(row.local_thumb_path))
         : null,
       date_taken_iso: new Date(row.date_taken * 1000).toISOString(),
     }));
@@ -1750,7 +1940,7 @@ ipcMain.handle('tg-empty-trash-item', async (_event, photoIds: string[]) => {
   }
 });
 
-// â”€â”€â”€ Settings & Account IPC â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Settings & Account IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-get-account-info', async () => {
   try {
@@ -1872,7 +2062,7 @@ ipcMain.handle('tg-check-for-updates', async () => {
   }
 });
 
-// â”€â”€â”€ openExternal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ openExternal Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-open-external', async (_event, url: string) => {
   if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
@@ -1880,7 +2070,7 @@ ipcMain.handle('tg-open-external', async (_event, url: string) => {
   }
 });
 
-// â”€â”€â”€ Multi-folder sync management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Multi-folder sync management Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 const STORE_KEY_SYNC_FOLDERS = 'sync_folders';
 
@@ -1914,7 +2104,7 @@ ipcMain.handle('tg-remove-sync-folder', (_event, folderPath: string) => {
   }
 });
 
-// â”€â”€â”€ Download thumbnail for photo viewer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Download thumbnail for photo viewer Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-download-thumb', async (_event, photoId: string, _fileId: string) => {
   try {
@@ -1923,7 +2113,7 @@ ipcMain.handle('tg-download-thumb', async (_event, photoId: string, _fileId: str
       'SELECT local_thumb_path FROM photos WHERE id = ?', photoId
     );
     if (row?.local_thumb_path) {
-      const url = 'file://' + row.local_thumb_path.replace(/\\/g, '/');
+      const url = 'thumb://local/' + encodeURIComponent(require('path').basename(row.local_thumb_path));
       return { url };
     }
     return { error: 'No local thumbnail available' };
@@ -1932,7 +2122,7 @@ ipcMain.handle('tg-download-thumb', async (_event, photoId: string, _fileId: str
   }
 });
 
-// â”€â”€â”€ Clear and switch account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Clear and switch account Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-clear-and-switch-account', async () => {
   try {
@@ -1954,8 +2144,8 @@ ipcMain.handle('tg-clear-and-switch-account', async () => {
 
     // 3. Delete ALL account-specific keys from electron-store
     store.delete(STORE_KEY_SESSION);
-    store.delete(STORE_KEY_CHANNEL);       // Fix 6: was deleting the legacy key — now clears the real one
-    store.delete(STORE_KEY_CHANNEL_ID);    // legacy key — belt-and-suspenders
+    store.delete(STORE_KEY_CHANNEL);       // Fix 6: was deleting the legacy key â€” now clears the real one
+    store.delete(STORE_KEY_CHANNEL_ID);    // legacy key â€” belt-and-suspenders
     store.delete('sync_folders');
     store.delete('sync_folder');
     store.delete('auto_sync_enabled');
@@ -1979,7 +2169,7 @@ ipcMain.handle('tg-clear-and-switch-account', async () => {
   }
 });
 
-// â”€â”€â”€ Cleanup duplicate Telegram messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Cleanup duplicate Telegram messages Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-cleanup-duplicates', async () => {
   try {
@@ -2011,7 +2201,7 @@ ipcMain.handle('tg-cleanup-duplicates', async () => {
     for (const msg of messages) {
       if (masterIndexMsgIds.has(msg.id)) continue;
       if (msg.media && validFileIds.has(msg.id?.toString())) continue;
-      // Text-only messages (metadata spam) or unrecognised â€” delete
+      // Text-only messages (metadata spam) or unrecognised Ã¢â‚¬â€ delete
       if (!msg.media || msg.message) {
         toDelete.push(msg.id);
       }
@@ -2028,7 +2218,7 @@ ipcMain.handle('tg-cleanup-duplicates', async () => {
   }
 });
 
-// â”€â”€â”€ PIN lock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PIN lock Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 ipcMain.handle('tg-set-pin', async (_event, pin: string) => {
   if (typeof pin !== 'string' || !/^\d{4,6}$/.test(pin)) return { error: 'Invalid PIN' };
