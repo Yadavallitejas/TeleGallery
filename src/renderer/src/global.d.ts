@@ -91,6 +91,9 @@ interface Window {
     downloadThumb: (photoId: string, fileId: string) => Promise<{ url?: string; error?: string }>;
     clearAndSwitchAccount: () => Promise<{ success: boolean; error?: string }>;
     cleanupDuplicateMessages: () => Promise<{ success: boolean; deleted?: number; error?: string }>;
+    copyToClipboard: (photoId: string) => Promise<{ success?: boolean; error?: string }>;
+    showInFolder: (photoId: string) => Promise<{ success?: boolean; error?: string }>;
+    requestVideo: (photoId: string) => Promise<{ url?: string; error?: string }>;
     // PIN lock
     setPin: (pin: string) => Promise<{ success?: boolean; error?: string }>;
     clearPin: () => Promise<{ success: boolean }>;

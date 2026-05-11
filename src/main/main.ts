@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, Notification, safeStorage, session, shell, protocol, net } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, Notification, safeStorage, session, shell, protocol, net, clipboard, nativeImage } from 'electron';
 import * as path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
@@ -499,7 +499,7 @@ function createWindow() {
     }
   });
 
-  // Fix 9: Block any attempt to open new browser windows Ã¢â‚¬â€ all navigation is in-app
+  // Fix 9: Block any attempt to open new browser windows — all navigation is in-app
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   if (isDev) {
@@ -532,16 +532,24 @@ app.whenReady().then(() => {
   // Register thumb:// protocol handler â€” serves files ONLY from thumbcache directory
   protocol.handle('thumb', async (request) => {
     try {
-      // URL format: thumb://local/<photoId>.jpg
       const url = new URL(request.url);
+      const host = url.host; // 'local' for thumbs, 'video' for video files
       const filename = decodeURIComponent(url.pathname.replace(/^\//,''));
-      const thumbCacheDir = path.join(app.getPath('userData'), 'thumbcache');
-      // Security: only serve files directly inside thumbcache (no path traversal)
-      const absPath = path.resolve(thumbCacheDir, path.basename(filename));
-      if (!absPath.startsWith(thumbCacheDir)) {
+      const baseFilename = require('path').basename(filename);
+
+      let cacheDir: string;
+      if (host === 'video') {
+        cacheDir = require('path').join(app.getPath('userData'), 'videocache');
+      } else {
+        cacheDir = require('path').join(app.getPath('userData'), 'thumbcache');
+      }
+
+      // Security: only serve files directly inside the cache dir (no path traversal)
+      const absPath = require('path').resolve(cacheDir, baseFilename);
+      if (!absPath.startsWith(cacheDir)) {
         return new Response('Forbidden', { status: 403 });
       }
-      return net.fetch('file:///' + absPath.replace(/\\\\/g, '/'));
+      return net.fetch('file:///' + absPath.replace(/\\/g, '/'));
     } catch {
       return new Response('Not Found', { status: 404 });
     }
@@ -848,21 +856,53 @@ ipcMain.handle('tg-sign-in-2fa', async (_event, password: string) => {
 });
 
 ipcMain.handle('tg-sign-out', async () => {
+  // Helper: wipe all account-specific local data
+  const clearLocalData = async () => {
+    store.delete(STORE_KEY_SESSION);
+    store.delete(STORE_KEY_CHANNEL);      // clear stale channel so next login starts fresh
+    store.delete(STORE_KEY_CHANNEL_ID);   // legacy key
+    store.delete('sync_folders');
+    store.delete('sync_folder');
+    store.delete('auto_sync_enabled');
+    store.delete('pin_hash');
+
+    // Wipe all photo/album data from local SQLite
+    try {
+      const db = DatabaseService.getInstance().db;
+      db.prepare('DELETE FROM photos').run();
+      db.prepare('DELETE FROM albums').run();
+      db.prepare('DELETE FROM photo_albums').run();
+      db.prepare('DELETE FROM sync_state').run();
+    } catch (dbErr) {
+      console.warn('[tg-sign-out] Could not clear DB:', dbErr);
+    }
+
+    // Delete local thumbnail cache
+    const thumbCacheDir = path.join(app.getPath('userData'), 'thumbcache');
+    await fs.rm(thumbCacheDir, { recursive: true, force: true }).catch(() => {});
+  };
+
   try {
+    // Stop folder watcher
+    if (fileWatcher) {
+      await fileWatcher.close().catch(() => {});
+      fileWatcher = null;
+      pendingFiles.forEach(t => clearTimeout(t));
+      pendingFiles.clear();
+    }
+
     if (tgClient) {
       await loadGramJS();
       await tgClient.invoke(new Api.auth.LogOut());
       await tgClient.disconnect();
       tgClient = null;
     }
-    store.delete(STORE_KEY_SESSION);
-    store.delete(STORE_KEY_CHANNEL_ID);
+    await clearLocalData();
     return { success: true };
   } catch (err: any) {
     console.error('[tg-sign-out]', err);
-    store.delete(STORE_KEY_SESSION);
-    store.delete(STORE_KEY_CHANNEL_ID);
     tgClient = null;
+    await clearLocalData();
     return { success: true };
   }
 });
@@ -1843,13 +1883,13 @@ ipcMain.handle('tg-move-to-trash', async (_event, photoIds: string[]) => {
     const db = DatabaseService.getInstance().db;
     const now = Math.floor(Date.now() / 1000);
     const stmt = db.prepare('UPDATE photos SET is_deleted = 1, deleted_at = ? WHERE id = ?');
-    
+
     db.transaction(() => {
       for (const pid of photoIds) {
         stmt.run(now, pid);
       }
     })();
-    
+
     await updateMasterIndexPhotos((index) => {
       for (const pid of photoIds) {
         const p = index.photos.find(p => p.id === pid);
@@ -2123,6 +2163,110 @@ ipcMain.handle('tg-download-thumb', async (_event, photoId: string, _fileId: str
 });
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Clear and switch account Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+
+
+
+// --- Download video from Telegram for local playback ---
+
+const videoCache = new Map<string, string>(); // photoId -> local file path
+
+ipcMain.handle('tg-request-video', async (_event, photoId: string) => {
+  try {
+    // Return cached path if available
+    if (videoCache.has(photoId)) {
+      const cached = videoCache.get(photoId)!;
+      // Verify file still exists
+      try {
+        await fs.access(cached);
+        return { url: 'thumb://video/' + encodeURIComponent(require('path').basename(cached)) };
+      } catch {
+        videoCache.delete(photoId);
+      }
+    }
+
+    const row = DatabaseService.getInstance().get<any>(
+      'SELECT file_id, original_filename, filename FROM photos WHERE id = ?', photoId
+    );
+    if (!row) return { error: 'Photo not found' };
+
+    await loadGramJS();
+    if (!tgClient) return { error: 'Not connected' };
+
+    const inputCh = await getStorageChannel();
+    const result = await tgClient.invoke(new Api.channels.GetChannels({ id: [inputCh] }));
+    const channelEntity = result.chats[0];
+
+    const fileId = parseInt(row.file_id);
+    if (isNaN(fileId)) return { error: 'Invalid file ID' };
+
+    const messages = await tgClient.getMessages(channelEntity, { ids: [fileId] });
+    if (!messages || messages.length === 0 || !messages[0]?.media) {
+      return { error: 'File not found on Telegram' };
+    }
+
+    const msg = messages[0];
+    const videoCacheDir = path.join(app.getPath('userData'), 'videocache');
+    await fs.mkdir(videoCacheDir, { recursive: true });
+
+    const ext = (row.original_filename || row.filename || 'video.mp4').split('.').pop() || 'mp4';
+    const outPath = path.join(videoCacheDir, `${photoId}.${ext}`);
+
+    // Check if already downloaded
+    try {
+      await fs.access(outPath);
+      videoCache.set(photoId, outPath);
+      return { url: 'thumb://video/' + encodeURIComponent(require('path').basename(outPath)) };
+    } catch { /* not cached, download */ }
+
+    // Download the video file
+    const buffer = await tgClient.downloadMedia(msg, { outputFile: outPath });
+    if (!buffer && !(await fs.access(outPath).then(() => true).catch(() => false))) {
+      return { error: 'Download failed' };
+    }
+
+    videoCache.set(photoId, outPath);
+    return { url: 'thumb://video/' + encodeURIComponent(require('path').basename(outPath)) };
+  } catch (err: any) {
+    console.error('[tg-request-video]', err);
+    return { error: err.message };
+  }
+});
+
+// --- Copy image/video thumbnail to system clipboard ---
+
+ipcMain.handle('tg-copy-to-clipboard', async (_event, photoId: string) => {
+  try {
+    const row = DatabaseService.getInstance().get<any>(
+      'SELECT local_thumb_path FROM photos WHERE id = ?', photoId
+    );
+    if (!row?.local_thumb_path) return { error: 'No local thumbnail available' };
+    const img = nativeImage.createFromPath(row.local_thumb_path);
+    if (img.isEmpty()) return { error: 'Could not load image' };
+    clipboard.writeImage(img);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[tg-copy-to-clipboard]', err);
+    return { error: err.message };
+  }
+});
+
+// --- Show file in system file explorer ---
+
+ipcMain.handle('tg-show-in-folder', async (_event, photoId: string) => {
+  try {
+    const row = DatabaseService.getInstance().get<any>(
+      'SELECT local_thumb_path FROM photos WHERE id = ?', photoId
+    );
+    if (row?.local_thumb_path) {
+      shell.showItemInFolder(row.local_thumb_path);
+      return { success: true };
+    }
+    return { error: 'No local file available' };
+  } catch (err: any) {
+    console.error('[tg-show-in-folder]', err);
+    return { error: err.message };
+  }
+});
 
 ipcMain.handle('tg-clear-and-switch-account', async () => {
   try {

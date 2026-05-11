@@ -1,393 +1,660 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Heart,
-  Trash2,
-  Info,
-  ImageIcon,
-  Video,
-  X,
-  ZoomIn,
-  ZoomOut,
-  RotateCw,
+  X, ZoomIn, ZoomOut, RotateCw, ChevronLeft, ChevronRight,
+  Heart, Trash2, Info, Share2, Copy, FolderOpen, FolderPlus,
+  Play, Volume2, VolumeX, Maximize2
 } from 'lucide-react';
 
 export interface Photo {
   id: string;
-  url: string | null;
-  thumb_url?: string | null;
-  date: string;
-  width: number;
-  height: number;
-  album?: string;
+  thumb_url?: string;
+  file_name?: string;
+  original_filename?: string;
+  media_type?: string;
   size_bytes?: number;
-  filename?: string;
-  tgFileId?: string;
-  file_id?: string;
-  is_favorite?: boolean;
   date_taken?: number;
-  isVideo?: boolean;
-  local_thumb_path?: string;
+  date_taken_iso?: string;
+  is_favorite?: number | boolean;
+  file_id?: string;
 }
 
 interface PhotoViewerProps {
+  photo?: Photo;          // legacy: single photo
   photos: Photo[];
-  initialIndex: number;
+  initialIndex?: number;  // legacy: open at index
   onClose: () => void;
-  onToggleFavorite?: (photoId: string, isFav: boolean) => void;
-  onMoveToTrash?: (photoIds: string[]) => void;
+  onDelete?: (id: string) => void;
+  onMoveToTrash?: (photoIds: string[]) => void;  // legacy alias
+  onToggleFavorite?: (id: string, current: boolean) => void;
+  onAddToAlbum?: (photoId: string) => void;
 }
 
-function formatBytes(bytes?: number): string {
-  if (!bytes) return '—';
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const isVideo = (photo: Photo) =>
+  photo.media_type === 'video' ||
+  /\.(mp4|mov|avi|mkv|webm|m4v|wmv|flv|3gp)$/i.test(
+    photo.file_name || photo.original_filename || ''
+  );
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes) return '';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+};
 
-function formatDate(photo: Photo): string {
-  if (photo.date_taken) {
-    return new Date(photo.date_taken * 1000).toLocaleString(undefined, {
-      year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  }
-  if (photo.date) {
-    const d = new Date(photo.date);
-    if (!isNaN(d.getTime())) return d.toLocaleString();
-  }
-  return '—';
-}
+const formatDate = (photo: Photo) => {
+  const d = photo.date_taken_iso
+    ? new Date(photo.date_taken_iso)
+    : photo.date_taken
+    ? new Date(photo.date_taken * 1000)
+    : null;
+  return d ? d.toLocaleString() : '';
+};
 
-const isVideoFile = (filename?: string) =>
-  !!filename && /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(filename);
+// ─── Toast ────────────────────────────────────────────────────────────────────
 
-export default function PhotoViewer({ photos, initialIndex, onClose, onToggleFavorite, onMoveToTrash }: PhotoViewerProps) {
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const [showInfo, setShowInfo] = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const [loadingPhotoId, setLoadingPhotoId] = useState<string | null>(null);
-  const [errorPhotoIds, setErrorPhotoIds] = useState<Set<string>>(new Set());
+const Toast: React.FC<{ message: string; type?: 'success' | 'error' }> = ({
+  message,
+  type = 'success',
+}) => (
+  <div
+    style={{
+      position: 'fixed',
+      bottom: 80,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: type === 'success' ? 'rgba(34,197,94,0.92)' : 'rgba(239,68,68,0.92)',
+      color: '#fff',
+      padding: '10px 24px',
+      borderRadius: 10,
+      fontWeight: 600,
+      fontSize: 14,
+      zIndex: 10001,
+      boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+      backdropFilter: 'blur(6px)',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {message}
+  </div>
+);
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+const PhotoViewer: React.FC<PhotoViewerProps> = ({
+  photo: propPhoto,
+  photos,
+  initialIndex,
+  onClose,
+  onDelete,
+  onMoveToTrash,
+  onToggleFavorite,
+  onAddToAlbum,
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    // Support both prop styles: initialIndex (legacy) or matching by photo.id
+    if (initialIndex !== undefined) return Math.max(0, Math.min(initialIndex, photos.length - 1));
+    if (propPhoto) return Math.max(0, photos.findIndex((p) => p.id === propPhoto.id));
+    return 0;
+  });
+  const photo = photos[currentIndex] ?? propPhoto ?? photos[0];
+  const vid = isVideo(photo);
+
+  // ── image transform state ──
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const isDragging = useRef(false);
+  const dragOrigin = useRef({ x: 0, y: 0, px: 0, py: 0 });
 
-  const currentPhoto = photos[currentIndex];
+  // ── video state ──
+  const [muted, setMuted] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  const resetTransform = () => { setZoom(1); setRotation(0); };
+  // ── UI state ──
+  const [showInfo, setShowInfo] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [isFav, setIsFav] = useState<boolean>(!!photo.is_favorite);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const goTo = useCallback((idx: number) => {
-    if (idx < 0 || idx >= photos.length) return;
-    setCurrentIndex(idx);
-    resetTransform();
-  }, [photos.length]);
-
-  // Keyboard navigation
+  // reset transform + video state when photo changes
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case 'Escape': onClose(); break;
-        case 'ArrowLeft': goTo(currentIndex - 1); break;
-        case 'ArrowRight': goTo(currentIndex + 1); break;
-        case 'i': case 'I': setShowInfo(prev => !prev); break;
-        case '+': case '=': setZoom(z => Math.min(4, z + 0.25)); break;
-        case '-': setZoom(z => Math.max(0.5, z - 0.25)); break;
-        case '0': resetTransform(); break;
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, goTo, onClose]);
+    setZoom(1);
+    setRotation(0);
+    setPanX(0);
+    setPanY(0);
+    setIsFav(!!photo.is_favorite);
+    setVideoUrl(null);
+    setVideoError(null);
+    setVideoLoading(false);
+  }, [photo.id]);
 
-  // Auto-hide controls after 3 s
-  const resetControlsTimeout = useCallback(() => {
-    setShowControls(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000);
-  }, []);
-
+  // Fetch video URL from main process when viewing a video
   useEffect(() => {
-    resetControlsTimeout();
-    return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
-  }, [currentIndex, resetControlsTimeout]);
-
-  // Fetch from Telegram if local thumb is missing
-  const fetchThumb = useCallback(async (photo: Photo) => {
-    if (loadingPhotoId === photo.id) return;
-    if (errorPhotoIds.has(photo.id)) return;
-    setLoadingPhotoId(photo.id);
-    try {
-      const result = await window.electronAPI.downloadThumb(photo.id, photo.file_id || '');
-      if (result?.url) {
-        // Update the photo's url in-place so it renders
-        photo.url = result.url;
-        setLoadingPhotoId(null);
+    if (!vid) return;
+    setVideoLoading(true);
+    setVideoUrl(null);
+    setVideoError(null);
+    window.electronAPI.requestVideo(photo.id).then((res) => {
+      if (res.url) {
+        setVideoUrl(res.url);
       } else {
-        setErrorPhotoIds(prev => new Set([...prev, photo.id]));
-        setLoadingPhotoId(null);
+        setVideoError(res.error || 'Could not load video');
       }
-    } catch {
-      setErrorPhotoIds(prev => new Set([...prev, photo.id]));
-      setLoadingPhotoId(null);
-    }
-  }, [loadingPhotoId, errorPhotoIds]);
+      setVideoLoading(false);
+    });
+  }, [photo.id, vid]);
 
+  // close on Escape, arrow nav
   useEffect(() => {
-    if (currentPhoto && !currentPhoto.url) {
-      fetchThumb(currentPhoto);
-    }
-  }, [currentIndex]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') navigate(1);
+      if (e.key === 'ArrowLeft') navigate(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
-  const handleDownload = async () => {
-    const p = currentPhoto;
-    if (p.url) {
-      window.electronAPI.openExternal(p.url);
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  const navigate = (dir: number) => {
+    setCurrentIndex((i) => (i + dir + photos.length) % photos.length);
+  };
+
+  // ── zoom helpers ──
+  const zoomIn = () => setZoom((z) => Math.min(z * 1.4, 6));
+  const zoomOut = () => {
+    setZoom((z) => {
+      const next = Math.max(z / 1.4, 0.5);
+      if (next <= 1) { setPanX(0); setPanY(0); }
+      return next;
+    });
+  };
+  const resetTransform = () => { setZoom(1); setRotation(0); setPanX(0); setPanY(0); };
+
+  // ── wheel zoom ──
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (vid) return;
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom((z) => {
+      const next = Math.min(Math.max(z * factor, 0.5), 6);
+      if (next <= 1) { setPanX(0); setPanY(0); }
+      return next;
+    });
+  }, [vid]);
+
+  // ── drag to pan ──
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom <= 1 || vid) return;
+    e.preventDefault();
+    isDragging.current = true;
+    dragOrigin.current = { x: e.clientX, y: e.clientY, px: panX, py: panY };
+  };
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    setPanX(dragOrigin.current.px + (e.clientX - dragOrigin.current.x));
+    setPanY(dragOrigin.current.py + (e.clientY - dragOrigin.current.y));
+  }, []);
+  const handleMouseUp = () => { isDragging.current = false; };
+
+  // double-click to zoom or reset
+  const handleDblClick = () => {
+    if (vid) return;
+    zoom > 1 ? resetTransform() : zoomIn();
+  };
+
+  // ── actions ──
+  const handleShare = async () => {
+    const res = await window.electronAPI.showInFolder(photo.id);
+    if (res.success) showToast('📂 File revealed in Explorer — right-click to share!');
+    else showToast('Could not locate file', 'error');
+  };
+
+  const handleCopy = async () => {
+    const res = await window.electronAPI.copyToClipboard(photo.id);
+    if (res.success) showToast('✅ Copied to clipboard!');
+    else showToast('Could not copy — ' + (res.error || 'unknown error'), 'error');
+  };
+
+  const handleShowInFolder = async () => {
+    const res = await window.electronAPI.showInFolder(photo.id);
+    if (res.success) showToast('📂 Opened in Explorer');
+    else showToast('Could not open folder', 'error');
+  };
+
+  const handleFav = async () => {
+    const next = !isFav;
+    setIsFav(next);
+    await onToggleFavorite?.(photo.id, !next);
+    showToast(next ? '❤️ Added to Favorites' : '💔 Removed from Favorites');
+  };
+
+  const handleDelete = async () => {
+    if (onMoveToTrash) {
+      await onMoveToTrash([photo.id]);
     } else {
-      const result = await window.electronAPI.downloadThumb(p.id, p.file_id || '');
-      if (result?.url) window.electronAPI.openExternal(result.url);
+      onDelete?.(photo.id);
     }
+    if (photos.length <= 1) { onClose(); return; }
+    navigate(currentIndex >= photos.length - 1 ? -1 : 1);
   };
 
-  const toggleFav = () => {
-    if (!currentPhoto || !onToggleFavorite) return;
-    const newFav = !(favorites[currentPhoto.id] ?? currentPhoto.is_favorite);
-    setFavorites(prev => ({ ...prev, [currentPhoto.id]: newFav }));
-    onToggleFavorite(currentPhoto.id, newFav);
-  };
+  const handleAddToAlbum = () => onAddToAlbum?.(photo.id);
 
-  const isFav = currentPhoto ? (favorites[currentPhoto.id] ?? currentPhoto.is_favorite) : false;
-  const isLoading = currentPhoto && loadingPhotoId === currentPhoto.id;
-  const isError = currentPhoto && errorPhotoIds.has(currentPhoto.id);
-  const isVid = currentPhoto && isVideoFile(currentPhoto.filename);
-  const displayUrl = currentPhoto?.url;
+  // ─────────────────────────────────────────────────────────────────── render
 
-  if (!currentPhoto) return null;
+  const imgTransform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rotation}deg)`;
+  const filename = photo.original_filename || photo.file_name || 'Untitled';
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex bg-black"
-      onMouseMove={resetControlsTimeout}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.96)',
+        display: 'flex', flexDirection: 'column',
+        userSelect: 'none',
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
-      {/* ── MAIN VIEWER ─────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* ── Top bar ── */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '10px 16px',
+          background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)',
+          flexShrink: 0, zIndex: 1,
+        }}
+      >
+        {/* Close */}
+        <button onClick={onClose} title="Close (Esc)" style={btnStyle}>
+          <X size={20} />
+        </button>
 
-        {/* Top Bar */}
-        <div
-          className={`absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3
-            bg-gradient-to-b from-black/80 via-black/30 to-transparent
-            transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}
-        >
-          {/* Left: back + title */}
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={onClose}
-              className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
-              title="Close (Esc)"
-            >
-              <ArrowLeft size={22} />
-            </button>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-white truncate" title={currentPhoto.filename || currentPhoto.id}>
-                {currentPhoto.filename || 'Photo'}
-              </p>
-              <p className="text-xs text-white/50">{currentIndex + 1} / {photos.length}</p>
-            </div>
+        {/* Filename + index */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            color: '#fff', fontWeight: 600, fontSize: 14,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {filename}
           </div>
-
-          {/* Right: action buttons */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => setZoom(z => Math.min(4, z + 0.25))} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Zoom in (+)"><ZoomIn size={18} /></button>
-            <button onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Zoom out (-)"><ZoomOut size={18} /></button>
-            <button onClick={() => setRotation(r => (r + 90) % 360)} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Rotate"><RotateCw size={18} /></button>
-            <div className="w-px h-5 bg-white/20 mx-1" />
-            <button onClick={handleDownload} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Download"><Download size={18} /></button>
-            <button
-              onClick={toggleFav}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors"
-              title={isFav ? 'Remove from favorites' : 'Add to favorites'}
-            >
-              <Heart size={18} className={isFav ? 'text-red-500 fill-red-500' : 'text-white/70 hover:text-white'} />
-            </button>
-            <button
-              onClick={() => { if (onMoveToTrash) { onMoveToTrash([currentPhoto.id]); onClose(); } }}
-              className="p-2 text-white/70 hover:text-red-400 hover:bg-red-500/10 rounded-full transition-colors"
-              title="Move to trash"
-            >
-              <Trash2 size={18} />
-            </button>
-            <div className="w-px h-5 bg-white/20 mx-1" />
-            <button
-              onClick={() => setShowInfo(v => !v)}
-              className={`p-2 rounded-full transition-colors ${showInfo ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
-              title="Info (i)"
-            >
-              <Info size={18} />
-            </button>
+          <div style={{ color: '#999', fontSize: 12 }}>
+            {currentIndex + 1} / {photos.length}
+            {photo.size_bytes ? ` · ${formatBytes(photo.size_bytes)}` : ''}
           </div>
         </div>
 
-        {/* Image/Video Area */}
-        <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-          {isLoading ? (
-            <div className="flex flex-col items-center gap-4 text-white/50">
-              <div className="w-10 h-10 border-4 border-white/20 border-t-white/80 rounded-full animate-spin" />
-              <p className="text-sm">Loading…</p>
+        {/* ── Shared actions (ALL files) ── */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <ActionBtn icon={<Share2 size={17} />} label="Share / Reveal in Explorer" onClick={handleShare} />
+          <ActionBtn icon={<Copy size={17} />} label="Copy to clipboard" onClick={handleCopy} />
+          <ActionBtn icon={<FolderOpen size={17} />} label="Show in folder" onClick={handleShowInFolder} />
+          {onAddToAlbum && (
+            <ActionBtn icon={<FolderPlus size={17} />} label="Add to album" onClick={handleAddToAlbum} />
+          )}
+
+          {/* ── Image-only controls ── */}
+          {!vid && (
+            <>
+              <Divider />
+              <ActionBtn icon={<ZoomIn size={17} />} label="Zoom in" onClick={zoomIn} />
+              <ActionBtn icon={<ZoomOut size={17} />} label="Zoom out" onClick={zoomOut} />
+              <ActionBtn
+                icon={<RotateCw size={17} />}
+                label="Rotate"
+                onClick={() => setRotation((r) => r + 90)}
+              />
+            </>
+          )}
+
+          {/* ── Video-only controls ── */}
+          {vid && (
+            <>
+              <Divider />
+              <ActionBtn
+                icon={muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+                label={muted ? 'Unmute' : 'Mute'}
+                onClick={() => {
+                  setMuted((m) => !m);
+                  if (videoRef.current) videoRef.current.muted = !muted;
+                }}
+              />
+              <ActionBtn
+                icon={<Maximize2 size={17} />}
+                label="Fullscreen"
+                onClick={() => videoRef.current?.requestFullscreen?.()}
+              />
+            </>
+          )}
+
+          <Divider />
+          <ActionBtn
+            icon={<Heart size={17} fill={isFav ? '#f43f5e' : 'none'} color={isFav ? '#f43f5e' : '#fff'} />}
+            label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+            onClick={handleFav}
+            active={isFav}
+          />
+          <ActionBtn icon={<Trash2 size={17} />} label="Move to trash" onClick={handleDelete} danger />
+          <ActionBtn
+            icon={<Info size={17} />}
+            label="Info"
+            onClick={() => setShowInfo((s) => !s)}
+            active={showInfo}
+          />
+        </div>
+      </div>
+
+      {/* ── Main viewer area ── */}
+      <div
+        ref={containerRef}
+        style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden', position: 'relative',
+        }}
+        onWheel={handleWheel}
+      >
+        {/* Left arrow */}
+        {photos.length > 1 && (
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              ...arrowBtnStyle,
+              left: 12,
+            }}
+          >
+            <ChevronLeft size={28} />
+          </button>
+        )}
+
+        {/* Media */}
+        {vid ? (
+          videoLoading ? (
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+              color: '#94a3b8',
+            }}>
+              <div style={{
+                width: 48, height: 48, border: '4px solid #334155',
+                borderTopColor: '#3b82f6', borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }} />
+              <span style={{ fontSize: 14 }}>Downloading video…</span>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
-          ) : isError ? (
-            <div className="flex flex-col items-center gap-3 text-white/40">
-              <ImageIcon size={72} strokeWidth={0.75} />
-              <p className="text-sm">{currentPhoto.filename || 'Preview unavailable'}</p>
+          ) : videoError ? (
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+              color: '#f87171', maxWidth: 300, textAlign: 'center',
+            }}>
+              <Play size={48} strokeWidth={1} color="#f87171" />
+              <span style={{ fontSize: 14 }}>{videoError}</span>
               <button
-                onClick={() => { setErrorPhotoIds(prev => { const next = new Set(prev); next.delete(currentPhoto.id); return next; }); fetchThumb(currentPhoto); }}
-                className="text-xs px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-white/60"
+                onClick={() => {
+                  setVideoLoading(true);
+                  setVideoError(null);
+                  window.electronAPI.requestVideo(photo.id).then((res) => {
+                    if (res.url) setVideoUrl(res.url);
+                    else setVideoError(res.error || 'Could not load video');
+                    setVideoLoading(false);
+                  });
+                }}
+                style={{
+                  background: '#3b82f6', color: '#fff', border: 'none',
+                  borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontSize: 13,
+                }}
               >
                 Retry
               </button>
             </div>
-          ) : displayUrl ? (
-            isVid ? (
-              <video
-                src={displayUrl}
-                controls
-                autoPlay
-                className="max-w-full max-h-full object-contain"
-                style={{ transform: `scale(${zoom}) rotate(${rotation}deg)`, transition: 'transform 0.2s' }}
-              />
-            ) : (
-              <img
-                ref={imgRef}
-                src={displayUrl}
-                alt={currentPhoto.filename || ''}
-                className="max-w-full max-h-full object-contain select-none"
-                style={{ transform: `scale(${zoom}) rotate(${rotation}deg)`, transition: 'transform 0.2s', cursor: zoom > 1 ? 'grab' : 'default' }}
-                draggable={false}
-                onError={() => {
-                  setErrorPhotoIds(prev => new Set([...prev, currentPhoto.id]));
-                  fetchThumb(currentPhoto);
-                }}
-                onDoubleClick={() => setZoom(z => z === 1 ? 2 : 1)}
-              />
-            )
-          ) : (
-            <div className="flex flex-col items-center gap-3 text-white/40">
-              {isVid ? <Video size={72} strokeWidth={0.75} /> : <ImageIcon size={72} strokeWidth={0.75} />}
-              <p className="text-sm">{currentPhoto.filename || 'No preview'}</p>
-            </div>
-          )}
+          ) : videoUrl ? (
+            <video
+              ref={videoRef}
+              key={videoUrl}
+              src={videoUrl}
+              controls
+              autoPlay
+              muted={muted}
+              style={{
+                maxWidth: '92%', maxHeight: '92%',
+                borderRadius: 8,
+                boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+                outline: 'none',
+              }}
+            />
+          ) : null
+        ) : (
+          <img
+            key={photo.id}
+            src={photo.thumb_url || ''}
+            alt={filename}
+            draggable={false}
+            onMouseDown={handleMouseDown}
+            onDoubleClick={handleDblClick}
+            style={{
+              maxWidth: zoom > 1 ? 'none' : '100%',
+              maxHeight: zoom > 1 ? 'none' : '100%',
+              objectFit: 'contain',
+              transform: imgTransform,
+              transformOrigin: 'center center',
+              transition: isDragging.current ? 'none' : 'transform 0.08s ease',
+              cursor: zoom > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'zoom-in',
+              borderRadius: 4,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+              userSelect: 'none',
+              // @ts-ignore — Webkit vendor prop
+              WebkitUserDrag: 'none',
+            }}
+          />
+        )}
 
-          {/* ← Prev button */}
+        {/* Right arrow */}
+        {photos.length > 1 && (
           <button
-            onClick={() => goTo(currentIndex - 1)}
-            className={`absolute left-3 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all ${
-              currentIndex === 0 ? 'opacity-0 pointer-events-none' : showControls ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            <ChevronLeft size={28} />
-          </button>
-
-          {/* → Next button */}
-          <button
-            onClick={() => goTo(currentIndex + 1)}
-            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/40 hover:bg-black/70 text-white backdrop-blur-sm transition-all ${
-              currentIndex === photos.length - 1 ? 'opacity-0 pointer-events-none' : showControls ? 'opacity-100' : 'opacity-0'
-            }`}
+            onClick={() => navigate(1)}
+            style={{
+              ...arrowBtnStyle,
+              right: 12,
+            }}
           >
             <ChevronRight size={28} />
           </button>
-        </div>
+        )}
 
-        {/* Bottom Filmstrip */}
-        <div className={`absolute bottom-0 left-0 right-0 pb-4 pt-10 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-          <div className="flex items-center justify-center gap-1.5 px-4 overflow-x-auto scrollbar-hide">
-            {photos.slice(Math.max(0, currentIndex - 7), Math.min(photos.length, currentIndex + 8)).map((p, idx) => {
-              const realIdx = Math.max(0, currentIndex - 7) + idx;
-              const isCurrent = realIdx === currentIndex;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => goTo(realIdx)}
-                  className={`relative flex-shrink-0 rounded-sm overflow-hidden transition-all ${
-                    isCurrent ? 'ring-2 ring-white scale-110 z-10' : 'opacity-50 hover:opacity-100 hover:scale-105'
-                  }`}
-                  style={{ width: 48, height: 48 }}
-                >
-                  {p.url ? (
-                    <img src={p.url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-white/10 flex items-center justify-center">
-                      <ImageIcon size={14} className="text-white/40" />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+        {/* Zoom badge */}
+        {!vid && zoom !== 1 && (
+          <div
+            onClick={resetTransform}
+            title="Click to reset"
+            style={{
+              position: 'absolute', bottom: 16, left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(0,0,0,0.65)',
+              color: '#fff', padding: '4px 14px',
+              borderRadius: 20, fontSize: 13, cursor: 'pointer',
+              backdropFilter: 'blur(4px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+            }}
+          >
+            {Math.round(zoom * 100)}% — click to reset
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ── INFO PANEL (slides in from right) ───────────────────── */}
+      {/* ── Info panel ── */}
       {showInfo && (
-        <div className="w-72 bg-[#111] border-l border-white/10 overflow-y-auto text-white flex flex-col animate-in slide-in-from-right duration-200">
-          <div className="flex items-center justify-between p-4 border-b border-white/10">
-            <h2 className="font-semibold text-sm">Details</h2>
-            <button onClick={() => setShowInfo(false)} className="p-1 text-white/40 hover:text-white rounded">
-              <X size={16} />
-            </button>
+        <div
+          style={{
+            position: 'absolute', top: 60, right: 0,
+            width: 280, background: 'rgba(15,15,15,0.96)',
+            backdropFilter: 'blur(12px)',
+            borderLeft: '1px solid rgba(255,255,255,0.08)',
+            padding: '20px 18px', color: '#ddd',
+            fontSize: 13, lineHeight: 1.7,
+            overflowY: 'auto', maxHeight: 'calc(100vh - 80px)',
+          }}
+        >
+          <div style={{ fontWeight: 700, color: '#fff', marginBottom: 12, fontSize: 15 }}>
+            File Info
           </div>
-
-          {/* Filename */}
-          {currentPhoto.url && (
-            <div className="m-4 rounded-lg overflow-hidden bg-white/5">
-              <img src={currentPhoto.url} alt="" className="w-full aspect-square object-cover opacity-90" />
-            </div>
-          )}
-
-          <div className="px-4 pb-6 space-y-5">
-            <InfoSection title="File">
-              <InfoRow label="Name" value={currentPhoto.filename || '—'} />
-              <InfoRow label="Size" value={formatBytes(currentPhoto.size_bytes)} />
-            </InfoSection>
-            <InfoSection title="Details">
-              <InfoRow label="Date taken" value={formatDate(currentPhoto)} />
-              <InfoRow
-                label="Dimensions"
-                value={currentPhoto.width && currentPhoto.height
-                  ? `${currentPhoto.width} × ${currentPhoto.height}`
-                  : '—'}
-              />
-              <InfoRow label="Type" value={isVid ? 'Video' : 'Photo'} />
-            </InfoSection>
-            {currentPhoto.album && (
-              <InfoSection title="Album">
-                <InfoRow label="" value={currentPhoto.album} />
-              </InfoSection>
-            )}
-          </div>
+          <InfoRow label="Name" value={filename} />
+          <InfoRow label="Type" value={vid ? 'Video' : 'Image'} />
+          <InfoRow label="Size" value={formatBytes(photo.size_bytes) || '—'} />
+          <InfoRow label="Date" value={formatDate(photo) || '—'} />
+          <InfoRow label="ID" value={photo.id?.slice(0, 16) + '…'} />
         </div>
       )}
-    </div>
-  );
-}
 
-function InfoSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      {title && <p className="text-xs font-semibold text-white/30 uppercase tracking-wider mb-2">{title}</p>}
-      <div className="space-y-2">{children}</div>
-    </div>
-  );
-}
+      {/* ── Thumbnail strip (bottom) ── */}
+      {photos.length > 1 && (
+        <div
+          style={{
+            display: 'flex', gap: 6, padding: '8px 12px',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)',
+            overflowX: 'auto', flexShrink: 0,
+            scrollbarWidth: 'thin',
+          }}
+        >
+          {photos.map((p, i) => (
+            <div
+              key={p.id}
+              onClick={() => setCurrentIndex(i)}
+              style={{
+                width: 54, height: 54, flexShrink: 0,
+                borderRadius: 6,
+                overflow: 'hidden',
+                border: i === currentIndex ? '2px solid #3b82f6' : '2px solid transparent',
+                cursor: 'pointer', opacity: i === currentIndex ? 1 : 0.55,
+                transition: 'opacity 0.15s, border-color 0.15s',
+              }}
+            >
+              {isVideo(p) ? (
+                <div
+                  style={{
+                    width: '100%', height: '100%',
+                    background: '#1e293b',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Play size={20} color="#94a3b8" />
+                </div>
+              ) : (
+                <img
+                  src={p.thumb_url || ''}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      {label && <span className="text-[11px] text-white/40">{label}</span>}
-      <span className="text-sm text-white/80 break-words">{value}</span>
+      {/* Toast */}
+      {toast && <Toast message={toast.msg} type={toast.type} />}
     </div>
   );
-}
+};
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+const ActionBtn: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  danger?: boolean;
+}> = ({ icon, label, onClick, active, danger }) => (
+  <button
+    onClick={onClick}
+    title={label}
+    style={{
+      background: active ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.06)',
+      border: active ? '1px solid rgba(59,130,246,0.5)' : '1px solid rgba(255,255,255,0.08)',
+      color: danger ? '#f87171' : active ? '#60a5fa' : '#e2e8f0',
+      borderRadius: 8,
+      width: 34, height: 34,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: 'pointer',
+      transition: 'background 0.15s, transform 0.1s',
+      flexShrink: 0,
+    }}
+    onMouseEnter={(e) => {
+      (e.currentTarget as HTMLButtonElement).style.background = danger
+        ? 'rgba(239,68,68,0.2)'
+        : active
+        ? 'rgba(59,130,246,0.45)'
+        : 'rgba(255,255,255,0.14)';
+      (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)';
+    }}
+    onMouseLeave={(e) => {
+      (e.currentTarget as HTMLButtonElement).style.background = active
+        ? 'rgba(59,130,246,0.3)'
+        : 'rgba(255,255,255,0.06)';
+      (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)';
+    }}
+  >
+    {icon}
+  </button>
+);
+
+const Divider = () => (
+  <div
+    style={{
+      width: 1, height: 22,
+      background: 'rgba(255,255,255,0.12)',
+      margin: '0 2px',
+      flexShrink: 0,
+    }}
+  />
+);
+
+const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+    <span style={{ color: '#64748b', minWidth: 48 }}>{label}</span>
+    <span style={{ color: '#e2e8f0', wordBreak: 'break-all' }}>{value}</span>
+  </div>
+);
+
+// ─── Shared styles ────────────────────────────────────────────────────────────
+
+const btnStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.06)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  color: '#e2e8f0',
+  borderRadius: 8,
+  width: 34, height: 34,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
+const arrowBtnStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: '50%', transform: 'translateY(-50%)',
+  background: 'rgba(0,0,0,0.55)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  color: '#fff',
+  borderRadius: '50%',
+  width: 46, height: 46,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'pointer',
+  zIndex: 2,
+  backdropFilter: 'blur(4px)',
+  transition: 'background 0.15s',
+};
+
+export default PhotoViewer;

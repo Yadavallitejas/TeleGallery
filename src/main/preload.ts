@@ -129,6 +129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadThumb: (photoId: string, fileId: string) => ipcRenderer.invoke('tg-download-thumb', photoId, fileId),
   clearAndSwitchAccount: () => ipcRenderer.invoke('tg-clear-and-switch-account'),
   cleanupDuplicateMessages: () => ipcRenderer.invoke('tg-cleanup-duplicates'),
+  copyToClipboard: (photoId: string) => ipcRenderer.invoke('tg-copy-to-clipboard', photoId),
+  showInFolder: (photoId: string) => ipcRenderer.invoke('tg-show-in-folder', photoId),
+  requestVideo: (photoId: string) => ipcRenderer.invoke('tg-request-video', photoId),
 
   // ── PIN lock ─────────────────────────────────────────────────────────────
   setPin: (pin: string) => ipcRenderer.invoke('tg-set-pin', pin),

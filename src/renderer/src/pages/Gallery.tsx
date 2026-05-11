@@ -6,17 +6,20 @@ import AddToAlbumModal from '../components/AddToAlbumModal';
 
 type FilterType = 'all' | 'photos' | 'videos' | 'favorites';
 
-const isVideo = (filename?: string) => {
+const isVideoFile = (filename?: string) => {
   if (!filename) return false;
-  return /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(filename);
+  return /\.(mp4|mov|avi|mkv|webm|m4v|wmv|flv|3gp)$/i.test(filename);
 };
 
 export default function Gallery() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // Frozen snapshot of photos when viewer opens — prevents cycling during upload
+  const [frozenPhotos, setFrozenPhotos] = useState<Photo[]>([]);
   const [photos, setPhotos] = useState<any[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isAlbumModalOpen, setIsAlbumModalOpen] = useState(false);
+  const [albumTargetPhotoId, setAlbumTargetPhotoId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -39,8 +42,8 @@ export default function Gallery() {
   const filteredPhotos = useMemo(() => {
     let result = photos;
 
-    if (filter === 'photos') result = result.filter(p => !isVideo(p.filename));
-    else if (filter === 'videos') result = result.filter(p => isVideo(p.filename));
+    if (filter === 'photos') result = result.filter(p => !isVideoFile(p.filename));
+    else if (filter === 'videos') result = result.filter(p => isVideoFile(p.filename));
     else if (filter === 'favorites') result = result.filter(p => p.is_favorite === 1);
 
     if (searchQuery.trim()) {
@@ -72,17 +75,22 @@ export default function Gallery() {
         id: row.id,
         url: row.thumb_url || null,
         thumb_url: row.thumb_url || null,
+        // PhotoViewer field names:
+        file_name: row.filename || row.original_filename || '',
+        original_filename: row.original_filename || row.filename || '',
+        media_type: isVideoFile(row.filename || row.original_filename) ? 'video' : 'image',
         date: dateStr,
         date_taken: row.date_taken,
         date_taken_iso: row.date_taken_iso,
         width: row.width,
         height: row.height,
         file_id: row.file_id,
-        filename: row.filename,
+        // Keep old field for grid display:
+        filename: row.filename || row.original_filename || '',
         size_bytes: row.size_bytes,
         is_favorite: row.is_favorite === 1,
         local_thumb_path: row.local_thumb_path,
-        isVideo: isVideo(row.filename),
+        isVideo: isVideoFile(row.filename || row.original_filename),
       });
     });
 
@@ -136,7 +144,16 @@ export default function Gallery() {
 
   const openPhoto = (photo: any) => {
     const absIndex = allPhotos.findIndex(p => p.id === photo.id);
-    if (absIndex !== -1) setViewerIndex(absIndex);
+    if (absIndex !== -1) {
+      // Freeze the current photos array so uploads don't shift the viewed photo
+      setFrozenPhotos([...allPhotos]);
+      setViewerIndex(absIndex);
+    }
+  };
+
+  const handleAddToAlbum = (photoId: string) => {
+    setAlbumTargetPhotoId(photoId);
+    setIsAlbumModalOpen(true);
   };
 
   const FILTERS: { key: FilterType; label: string; icon: any }[] = [
@@ -351,10 +368,11 @@ export default function Gallery() {
       {/* Add to Album Modal */}
       <AddToAlbumModal
         isOpen={isAlbumModalOpen}
-        onClose={() => setIsAlbumModalOpen(false)}
-        photoIds={Array.from(selectedIds)}
+        onClose={() => { setIsAlbumModalOpen(false); setAlbumTargetPhotoId(null); }}
+        photoIds={albumTargetPhotoId ? [albumTargetPhotoId] : Array.from(selectedIds)}
         onSuccess={() => {
           setSelectedIds(new Set());
+          setAlbumTargetPhotoId(null);
           loadPhotos();
         }}
       />
@@ -362,11 +380,12 @@ export default function Gallery() {
       {/* Full-Screen Photo Viewer */}
       {viewerIndex !== null && (
         <PhotoViewer
-          photos={allPhotos}
+          photos={frozenPhotos.length > 0 ? frozenPhotos : allPhotos}
           initialIndex={viewerIndex}
-          onClose={() => { setViewerIndex(null); loadPhotos(); }}
+          onClose={() => { setViewerIndex(null); setFrozenPhotos([]); loadPhotos(); }}
           onToggleFavorite={handleToggleFavorite}
           onMoveToTrash={handleMoveToTrash}
+          onAddToAlbum={handleAddToAlbum}
         />
       )}
     </div>
