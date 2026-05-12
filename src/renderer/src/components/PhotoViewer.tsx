@@ -65,14 +65,16 @@ const Toast: React.FC<{ message: string; type?: 'success' | 'error' }> = ({
       bottom: 80,
       left: '50%',
       transform: 'translateX(-50%)',
-      background: type === 'success' ? 'rgba(34,197,94,0.92)' : 'rgba(239,68,68,0.92)',
+      background: type === 'success'
+        ? 'var(--color-success)'
+        : 'var(--color-danger)',
       color: '#fff',
       padding: '10px 24px',
       borderRadius: 10,
       fontWeight: 600,
       fontSize: 14,
       zIndex: 10001,
-      boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+      boxShadow: 'var(--shadow-md)',
       backdropFilter: 'blur(6px)',
       pointerEvents: 'none',
       whiteSpace: 'nowrap',
@@ -388,8 +390,10 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({
               color: '#94a3b8',
             }}>
               <div style={{
-                width: 48, height: 48, border: '4px solid #334155',
-                borderTopColor: '#3b82f6', borderRadius: '50%',
+                width: 48, height: 48,
+                border: '4px solid rgba(255,255,255,0.12)',
+                borderTopColor: 'var(--color-primary)',
+                borderRadius: '50%',
                 animation: 'spin 0.8s linear infinite',
               }} />
               <span style={{ fontSize: 14 }}>Downloading video…</span>
@@ -413,8 +417,9 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({
                   });
                 }}
                 style={{
-                  background: '#3b82f6', color: '#fff', border: 'none',
-                  borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontSize: 13,
+                  background: 'var(--color-primary)', color: '#fff', border: 'none',
+                  borderRadius: 'var(--border-radius-sm)', padding: '8px 20px',
+                  cursor: 'pointer', fontSize: 13,
                 }}
               >
                 Retry
@@ -536,7 +541,9 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({
                 width: 54, height: 54, flexShrink: 0,
                 borderRadius: 6,
                 overflow: 'hidden',
-                border: i === currentIndex ? '2px solid #3b82f6' : '2px solid transparent',
+                border: i === currentIndex
+                ? `2px solid var(--color-primary)`
+                : '2px solid transparent',
                 cursor: 'pointer', opacity: i === currentIndex ? 1 : 0.55,
                 transition: 'opacity 0.15s, border-color 0.15s',
               }}

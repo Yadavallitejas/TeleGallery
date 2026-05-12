@@ -6,6 +6,7 @@ import {
   Link,
   useLocation,
   useNavigate,
+  useSearchParams,
 } from 'react-router-dom';
 import { Settings as SettingsIcon, Image, FolderOpen, LogOut, Search, Plus, Star, Trash2, RefreshCcw, CheckCircle2, AlertCircle, Shield } from 'lucide-react';
 import Login from './pages/Login';
@@ -24,6 +25,7 @@ import Trash from './pages/Trash';
 const FULL_SCREEN_ROUTES = ['/login', '/setup'];
 
 function AppLayout({ children }: { children: React.ReactNode }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const isFullScreen = FULL_SCREEN_ROUTES.includes(location.pathname);
@@ -77,15 +79,45 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (isLocked) {
     return (
-      <div className="w-full h-screen bg-background flex flex-col items-center justify-center space-y-6">
-        <div className="w-20 h-20 bg-primary/20 text-primary rounded-full flex items-center justify-center">
+      <div
+        style={{
+          width: '100%', height: '100vh',
+          backgroundColor: 'var(--bg-app)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '24px',
+        }}
+      >
+        <div
+          style={{
+            width: 80, height: 80,
+            backgroundColor: 'rgba(26, 115, 232, 0.15)',
+            color: 'var(--color-primary)',
+            borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
           <Shield size={40} />
         </div>
-        <h1 className="text-3xl font-bold text-foreground">App Locked</h1>
-        <p className="text-muted text-center max-w-sm">
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)' }}>App Locked</h1>
+        <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: 360 }}>
           TeleGallery is protected with Windows Hello. Please authenticate to continue.
         </p>
-        <button onClick={triggerUnlock} className="px-8 py-3 bg-primary text-white font-medium rounded-xl hover:bg-primary/90 transition-colors">
+        <button
+          onClick={triggerUnlock}
+          style={{
+            padding: '12px 32px',
+            backgroundColor: 'var(--color-primary)',
+            color: '#ffffff',
+            fontWeight: 500,
+            borderRadius: 'var(--border-radius-md)',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 14,
+            transition: 'background-color var(--transition-fast)',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-primary-hover)')}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-primary)')}
+        >
           Unlock with Windows Hello
         </button>
       </div>
@@ -136,14 +168,25 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           <h1 className="text-xl font-medium text-foreground tracking-tight">TeleGallery</h1>
         </div>
 
-        {/* Search Bar (Placeholder) */}
+        {/* Search Bar — single instance, wired to ?q= URL param */}
         <div className="flex-1 max-w-2xl px-4">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-muted" />
             </div>
             <input
+              id="global-search"
               type="text"
+              value={searchParams.get('q') ?? ''}
+              onChange={e => {
+                const v = e.target.value;
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev);
+                  if (v) next.set('q', v);
+                  else next.delete('q');
+                  return next;
+                }, { replace: true });
+              }}
               className="block w-full pl-10 pr-3 py-2 border-none rounded-lg bg-muted-bg text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50 transition-shadow"
               placeholder="Search your photos"
             />
@@ -257,10 +300,25 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (checking) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0b0f1a]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-white/40">Connecting to Telegram…</p>
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '100vh',
+          backgroundColor: 'var(--bg-app)',
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <div
+            style={{
+              width: 32, height: 32,
+              border: '3px solid var(--border-color)',
+              borderTopColor: 'var(--color-primary)',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+            }}
+          />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Connecting to Telegram…</p>
         </div>
       </div>
     );
@@ -270,11 +328,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  const [theme] = useState<'dark' | 'light'>('light');
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
+  // Theme is managed entirely by AppearanceContext which sets data-theme on <html>.
+  // No local theme state needed here.
 
   return (
     <Router>

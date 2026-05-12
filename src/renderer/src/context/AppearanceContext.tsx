@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useTheme, ThemeValue } from '../hooks/useTheme';
 
-export type Theme = 'dark' | 'light' | 'system';
+export type Theme = ThemeValue;
 export type GridSize = 'small' | 'medium' | 'large';
 
 interface AppearanceState {
@@ -11,55 +12,31 @@ interface AppearanceState {
 }
 
 const AppearanceContext = createContext<AppearanceState>({
-  theme: 'dark',
+  theme: 'light',
   gridSize: 'medium',
   setTheme: () => {},
   setGridSize: () => {},
 });
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('dark');
+  // useTheme owns all data-theme DOM mutations, localStorage, and electron-store
+  // persistence for the theme. No duplicate logic here.
+  const { theme, setTheme } = useTheme();
   const [gridSize, setGridSizeState] = useState<GridSize>('medium');
 
-  // Load persisted appearance on mount
+  // Load persisted grid-size preference on mount
   useEffect(() => {
-    Promise.all([
-      window.electronAPI.getSetting('appearance.theme').catch(() => 'dark'),
-      window.electronAPI.getSetting('appearance.gridSize').catch(() => 'medium'),
-    ]).then(([t, g]) => {
-      if (t) setThemeState(t as Theme);
-      if (g) setGridSizeState(g as GridSize);
-    });
+    window.electronAPI
+      ?.getSetting('appearance.gridSize')
+      .then((g) => {
+        if (g) setGridSizeState(g as GridSize);
+      })
+      .catch(() => {});
   }, []);
-
-  // Apply theme to document root
-  useEffect(() => {
-    const root = document.documentElement;
-    const applyTheme = (resolved: 'dark' | 'light') => {
-      root.classList.remove('dark', 'light');
-      root.classList.add(resolved);
-      root.setAttribute('data-theme', resolved);
-    };
-
-    if (theme === 'system') {
-      const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      applyTheme(mq.matches ? 'dark' : 'light');
-      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches ? 'dark' : 'light');
-      mq.addEventListener('change', handler);
-      return () => mq.removeEventListener('change', handler);
-    } else {
-      applyTheme(theme);
-    }
-  }, [theme]);
-
-  const setTheme = (t: Theme) => {
-    setThemeState(t);
-    window.electronAPI.setSetting('appearance.theme', t).catch(console.error);
-  };
 
   const setGridSize = (g: GridSize) => {
     setGridSizeState(g);
-    window.electronAPI.setSetting('appearance.gridSize', g).catch(console.error);
+    window.electronAPI?.setSetting('appearance.gridSize', g).catch(console.error);
   };
 
   return (

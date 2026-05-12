@@ -1,34 +1,62 @@
+/* ── Import design system first — it defines all CSS variables ─────────────── */
+@import '../styles/design-system.css';
+
+/* ── Tailwind layers ──────────────────────────────────────────────────────── */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Base layer overrides using design system tokens ─────────────────────── */
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --border: 240 5.9% 90%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
+  * {
+    border-color: var(--border-color);
   }
 
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+  }
+
+  /* Inputs and form elements */
+  input,
+  textarea,
+  select {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-secondary);
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
+/* ── Utility helpers not in Tailwind ──────────────────────────────────────── */
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
-  body {
-    @apply bg-background text-foreground;
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-color) transparent;
+  }
+
+  /* Backdrop blur glass effect */
+  .glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  [data-theme="dark"] .glass {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.08);
   }
 }

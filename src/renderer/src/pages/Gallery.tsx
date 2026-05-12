@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Check, Cloud, FolderPlus, X, Trash2, Image, Video, Heart, Search } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Check, Cloud, FolderPlus, X, Trash2, Image, Video, Heart } from 'lucide-react';
 
 import PhotoViewer, { Photo } from '../components/PhotoViewer';
 import AddToAlbumModal from '../components/AddToAlbumModal';
@@ -21,7 +22,9 @@ export default function Gallery() {
   const [isAlbumModalOpen, setIsAlbumModalOpen] = useState(false);
   const [albumTargetPhotoId, setAlbumTargetPhotoId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  // Search query is owned by the single navbar search bar, read via URL param.
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
 
   useEffect(() => {
     loadPhotos();
@@ -178,22 +181,9 @@ export default function Gallery() {
         </div>
       )}
 
-      {/* Sticky Top Bar: Search + Filter Chips */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md border-b border-border px-4 pt-3 pb-0">
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            placeholder="Search photos…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-muted-bg border border-border rounded-full text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
-          />
-        </div>
-
-        {/* Filter Chips */}
-        <div className="flex items-center gap-2 pb-3 overflow-x-auto scrollbar-hide">
+      {/* Filter chips — one row, just below navbar */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md border-b border-border px-4 py-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
           {FILTERS.map(f => {
             const Icon = f.icon;
             return (
@@ -230,7 +220,7 @@ export default function Gallery() {
             return (
               <div key={group.date} className="mb-8">
                 {/* Date Group Header */}
-                <div className="group/header flex items-center mb-3 sticky top-[104px] z-10 bg-background/95 backdrop-blur-sm py-1">
+                <div className="group/header flex items-center mb-3 sticky top-[52px] z-10 bg-background/95 backdrop-blur-sm py-1">
                   <div
                     className={`w-5 h-5 rounded-full border-2 mr-3 flex items-center justify-center cursor-pointer transition-all flex-shrink-0 ${
                       groupSelected
@@ -341,24 +331,48 @@ export default function Gallery() {
 
       {/* Multi-Select Floating Action Bar */}
       {isMultiSelect && (
-        <div className="fixed bottom-14 left-1/2 -translate-x-1/2 ml-32 z-30 bg-[#1a1a2e] border border-white/10 shadow-2xl rounded-full px-6 py-3 flex items-center gap-4 animate-in slide-in-from-bottom-4">
-          <div className="text-sm font-semibold text-white">{selectedIds.size} selected</div>
-          <div className="h-4 w-px bg-white/20" />
+        <div
+          className="fixed bottom-14 left-1/2 z-30 flex items-center gap-4 animate-in slide-in-from-bottom-4"
+          style={{
+            transform: 'translateX(-50%) translateX(128px)',
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-color)',
+            boxShadow: 'var(--shadow-lg)',
+            borderRadius: 'var(--border-radius-lg)',
+            padding: '12px 24px',
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+            {selectedIds.size} selected
+          </div>
+          <div style={{ width: 1, height: 16, backgroundColor: 'var(--border-color)' }} />
           <button
             onClick={() => setIsAlbumModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+            style={{ color: 'var(--color-primary)', border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             <FolderPlus size={16} /> Add to Album
           </button>
           <button
             onClick={() => handleMoveToTrash(Array.from(selectedIds))}
-            className="flex items-center gap-2 px-3 py-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+            style={{ color: 'var(--color-danger)', border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(217, 48, 37, 0.08)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             <Trash2 size={16} /> Delete
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
-            className="p-1.5 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+            style={{
+              padding: 6, borderRadius: '50%',
+              color: 'var(--text-secondary)', backgroundColor: 'transparent',
+              border: 'none', cursor: 'pointer', display: 'flex',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
             <X size={16} />
           </button>

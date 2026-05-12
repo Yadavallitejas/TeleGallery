@@ -4,8 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TeleGallery</title>
+    <!--
+      Anti-flash theme script: runs synchronously before any CSS or React loads.
+      Reads the saved theme from localStorage and sets data-theme on <html>
+      so the correct CSS variables are active from the very first paint.
+      Key must match THEME_STORAGE_KEY in src/renderer/src/hooks/useTheme.ts
+    -->
+    <script>
+      try {
+        var t = localStorage.getItem('tg-theme') || 'light';
+        var resolved =
+          t === 'system'
+            ? window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+            : t;
+        document.documentElement.setAttribute('data-theme', resolved);
+      } catch (e) {}
+    </script>
   </head>
-  <body class="bg-background text-foreground overflow-hidden">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
