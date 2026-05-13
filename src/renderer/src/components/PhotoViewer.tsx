@@ -138,6 +138,34 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({
     setVideoLoading(false);
   }, [photo.id]);
 
+  // ── full-resolution original loading (tiered: show thumb immediately, upgrade in bg) ──
+  const [fullImageUrl, setFullImageUrl] = useState<string | null>(null);
+  const [fullImageLoading, setFullImageLoading] = useState(false);
+  const fullFetchRef = useRef<string | null>(null); // guard against stale fetches
+
+  useEffect(() => {
+    if (vid) return; // videos handled separately
+    setFullImageUrl(null);
+    setFullImageLoading(false);
+
+    const fetchId = photo.id;
+    fullFetchRef.current = fetchId;
+
+    setFullImageLoading(true);
+    (window.electronAPI as any).requestFullImage(photo.id).then((res: any) => {
+      if (fullFetchRef.current !== fetchId) return; // stale – user navigated away
+      if (res?.url) {
+        setFullImageUrl(res.url);
+      }
+      setFullImageLoading(false);
+    }).catch(() => {
+      if (fullFetchRef.current !== fetchId) return;
+      setFullImageLoading(false);
+    });
+
+    return () => { fullFetchRef.current = null; };
+  }, [photo.id, vid]);
+
   // Fetch video URL from main process when viewing a video
   useEffect(() => {
     if (!vid) return;
@@ -442,28 +470,67 @@ const PhotoViewer: React.FC<PhotoViewerProps> = ({
             />
           ) : null
         ) : (
-          <img
-            key={photo.id}
-            src={photo.thumb_url || ''}
-            alt={filename}
-            draggable={false}
-            onMouseDown={handleMouseDown}
-            onDoubleClick={handleDblClick}
-            style={{
-              maxWidth: zoom > 1 ? 'none' : '100%',
-              maxHeight: zoom > 1 ? 'none' : '100%',
-              objectFit: 'contain',
-              transform: imgTransform,
-              transformOrigin: 'center center',
-              transition: isDragging.current ? 'none' : 'transform 0.08s ease',
-              cursor: zoom > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'zoom-in',
-              borderRadius: 4,
-              boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
-              userSelect: 'none',
-              // @ts-ignore — Webkit vendor prop
-              WebkitUserDrag: 'none',
-            }}
-          />
+          <>
+            <img
+              key={photo.id + (fullImageUrl ? '-full' : '-thumb')}
+              src={fullImageUrl || photo.thumb_url || ''}
+              alt={filename}
+              draggable={false}
+              onMouseDown={handleMouseDown}
+              onDoubleClick={handleDblClick}
+              style={{
+                maxWidth: zoom > 1 ? 'none' : '100%',
+                maxHeight: zoom > 1 ? 'none' : '100%',
+                objectFit: 'contain',
+                transform: imgTransform,
+                transformOrigin: 'center center',
+                transition: isDragging.current ? 'none' : 'transform 0.08s ease',
+                cursor: zoom > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'zoom-in',
+                borderRadius: 4,
+                boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+                userSelect: 'none',
+                // @ts-ignore — Webkit vendor prop
+                WebkitUserDrag: 'none',
+              }}
+            />
+            {/* "Loading original…" pill — non-blocking, bottom-right corner */}
+            {fullImageLoading && !fullImageUrl && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 20,
+                  right: 20,
+                  background: 'rgba(0,0,0,0.6)',
+                  backdropFilter: 'blur(6px)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: '#94a3b8',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  padding: '5px 12px',
+                  borderRadius: 20,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  pointerEvents: 'none',
+                  zIndex: 3,
+                }}
+              >
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    border: '2px solid rgba(255,255,255,0.2)',
+                    borderTopColor: 'var(--color-primary, #1a73e8)',
+                    animation: 'spin 0.9s linear infinite',
+                  }}
+                />
+                Loading original…
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </div>
+            )}
+          </>
         )}
 
         {/* Right arrow */}

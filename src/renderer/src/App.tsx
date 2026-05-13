@@ -3,21 +3,20 @@ import {
   HashRouter as Router,
   Routes,
   Route,
-  Link,
   useLocation,
   useNavigate,
   useSearchParams,
 } from 'react-router-dom';
-import { Settings as SettingsIcon, Image, FolderOpen, LogOut, Search, Plus, Star, Trash2, RefreshCcw, CheckCircle2, AlertCircle, Shield } from 'lucide-react';
+import { Search, Plus, RefreshCcw, CheckCircle2, AlertCircle } from 'lucide-react';
 import Login from './pages/Login';
 import Setup from './pages/Setup';
 import Gallery from './pages/Gallery';
 import Settings from './pages/Settings';
 import UploadQueue from './components/UploadQueue';
-
+import ProfileMenu from './components/ProfileMenu';
+import Sidebar from './components/Sidebar';
 import Album from './pages/Album';
 import AlbumDetail from './pages/AlbumDetail';
-
 import Favorites from './pages/Favorites';
 import Trash from './pages/Trash';
 
@@ -32,6 +31,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
   const [syncState, setSyncState] = useState<{ status: string; progress: number } | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+  const [profile, setProfile] = useState<{ url?: string | null; firstName?: string; lastName?: string } | null>(null);
 
   useEffect(() => {
     if (isFullScreen) return;
@@ -41,6 +41,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     window.electronAPI.getSetting('app_lock_enabled').then(enabled => {
       if (enabled) {
         setIsLocked(true);
+        window.electronAPI.getProfilePhoto().then(p => {
+          if (!p.error) setProfile(p);
+        }).catch(() => {});
         triggerUnlock();
       }
     });
@@ -78,6 +81,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   if (isLocked) {
+    const initial = profile?.firstName?.[0]?.toUpperCase() ?? 'U';
+    const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'User';
+
     return (
       <div
         style={{
@@ -89,16 +95,26 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div
           style={{
-            width: 80, height: 80,
-            backgroundColor: 'rgba(26, 115, 232, 0.15)',
-            color: 'var(--color-primary)',
+            width: 96, height: 96,
+            backgroundColor: 'var(--color-primary)',
+            color: '#fff',
             borderRadius: '50%',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden',
+            boxShadow: 'var(--shadow-md)',
+            border: '4px solid var(--bg-surface)'
           }}
         >
-          <Shield size={40} />
+          {profile?.url ? (
+            <img src={profile.url} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{ fontSize: 36, fontWeight: 700 }}>{initial}</span>
+          )}
         </div>
-        <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)' }}>App Locked</h1>
+        <div style={{ textAlign: 'center' }}>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>{fullName}</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 15 }}>App Locked</p>
+        </div>
         <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: 360 }}>
           TeleGallery is protected with Windows Hello. Please authenticate to continue.
         </p>
@@ -140,40 +156,48 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const NavLink = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
-    const isActive = location.pathname === to;
-    return (
-      <Link
-        to={to}
-        className={`flex items-center gap-4 px-6 py-3 rounded-r-full mr-4 transition-colors ${
-          isActive 
-            ? 'bg-primary/10 text-primary font-medium' 
-            : 'text-foreground hover:bg-muted-bg'
-        }`}
-      >
-        <Icon size={20} className={isActive ? "text-primary" : "text-muted"} />
-        <span>{label}</span>
-      </Link>
-    );
-  };
+
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        backgroundColor: 'var(--bg-app)',
+        color: 'var(--text-primary)',
+        overflow: 'hidden',
+      }}
+    >
       {/* Top Navigation Bar */}
-      <header className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 border-b border-border bg-background z-20 shrink-0">
-        <div className="flex items-center gap-2 w-64 shrink-0">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center font-bold text-white shadow-sm">
-            T
-          </div>
-          <h1 className="text-xl font-medium text-foreground tracking-tight">TeleGallery</h1>
-        </div>
-
+      <header
+        style={{
+          height: 'var(--navbar-height)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 24px',
+          borderBottom: '1px solid var(--border-color)',
+          backgroundColor: 'var(--bg-app)',
+          zIndex: 20,
+          flexShrink: 0,
+          gap: 16,
+        }}
+      >
         {/* Search Bar — single instance, wired to ?q= URL param */}
-        <div className="flex-1 max-w-2xl px-4">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-muted" />
-            </div>
+        <div style={{ flex: 1, maxWidth: 640 }}>
+          <div style={{ position: 'relative' }}>
+            <Search
+              size={16}
+              style={{
+                position: 'absolute',
+                left: 12,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-secondary)',
+                pointerEvents: 'none',
+              }}
+            />
             <input
               id="global-search"
               type="text"
@@ -187,68 +211,110 @@ function AppLayout({ children }: { children: React.ReactNode }) {
                   return next;
                 }, { replace: true });
               }}
-              className="block w-full pl-10 pr-3 py-2 border-none rounded-lg bg-muted-bg text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50 transition-shadow"
-              placeholder="Search your photos"
+              style={{
+                display: 'block',
+                width: '100%',
+                paddingLeft: 36,
+                paddingRight: 12,
+                paddingTop: 8,
+                paddingBottom: 8,
+                border: '1px solid var(--border-color)',
+                borderRadius: 24,
+                backgroundColor: 'var(--bg-surface)',
+                color: 'var(--text-primary)',
+                fontSize: 14,
+                outline: 'none',
+                transition: 'box-shadow var(--transition-fast), border-color var(--transition-fast)',
+              }}
+              onFocus={e => {
+                e.currentTarget.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--color-primary) 30%, transparent)';
+                e.currentTarget.style.borderColor = 'var(--color-primary)';
+              }}
+              onBlur={e => {
+                e.currentTarget.style.boxShadow = 'none';
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+              }}
+              placeholder="Search your photos…"
             />
           </div>
         </div>
 
         {/* Actions & Profile */}
-        <div className="flex items-center gap-4 shrink-0 pl-4">
-          
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
           {syncState && (
-            <div className="flex items-center gap-2 text-xs font-medium bg-muted-bg px-3 py-1.5 rounded-full">
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                backgroundColor: 'var(--bg-surface)',
+                padding: '4px 12px',
+                borderRadius: 999,
+                border: '1px solid var(--border-color)',
+              }}
+            >
               {syncState.progress < 100 && syncState.status !== 'Sync failed' ? (
-                <RefreshCcw size={14} className="text-blue-500 animate-pulse" />
+                <RefreshCcw size={13} style={{ color: '#1a73e8', animation: 'spin 1s linear infinite' }} />
               ) : syncState.status === 'Sync failed' ? (
-                <AlertCircle size={14} className="text-red-500" />
+                <AlertCircle size={13} style={{ color: 'var(--color-danger)' }} />
               ) : (
-                <CheckCircle2 size={14} className="text-green-500" />
+                <CheckCircle2 size={13} style={{ color: 'var(--color-success)' }} />
               )}
-              <span className="text-muted truncate max-w-[150px]">{syncState.status}</span>
+              <span style={{ color: 'var(--text-secondary)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {syncState.status}
+              </span>
             </div>
           )}
 
-          <button 
-            className="flex items-center gap-2 bg-muted-bg hover:bg-black/5 text-foreground px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+          <button
             onClick={handleUpload}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              backgroundColor: 'var(--color-primary)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '8px 16px',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'background-color var(--transition-fast)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-primary-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-primary)')}
           >
-            <Plus size={18} />
+            <Plus size={17} />
             <span>Upload</span>
           </button>
-          
-          <Link to="/settings" className="p-2 rounded-full hover:bg-muted-bg transition-colors text-muted">
-            <SettingsIcon size={24} />
-          </Link>
-          
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-medium text-sm cursor-pointer shadow-sm">
-            U
-          </div>
+
+          <ProfileMenu
+            onSignOut={handleSignOut}
+            onLock={undefined}
+          />
         </div>
       </header>
 
       {/* Main Area */}
-      <div className="flex flex-1 overflow-hidden">
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Sidebar */}
-        <nav className="w-64 flex flex-col py-4 border-r border-border shrink-0 z-10 bg-background">
-          <div className="flex flex-col gap-1 flex-1">
-            <NavLink to="/" icon={Image} label="Photos" />
-            <NavLink to="/album" icon={FolderOpen} label="Albums" />
-            <NavLink to="/favorites" icon={Star} label="Favorites" />
-            <NavLink to="/trash" icon={Trash2} label="Trash" />
-          </div>
-
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-4 px-6 py-3 rounded-r-full mr-4 hover:bg-red-50 text-red-600 transition-colors mt-auto"
-          >
-            <LogOut size={20} />
-            <span>Sign Out</span>
-          </button>
-        </nav>
+        <Sidebar onSignOut={handleSignOut} />
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto bg-background relative z-0">{children}</main>
+        <main
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            backgroundColor: 'var(--bg-app)',
+            position: 'relative',
+            zIndex: 0,
+          }}
+        >
+          {children}
+        </main>
       </div>
 
       <UploadQueue />

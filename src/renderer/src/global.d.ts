@@ -77,6 +77,7 @@ interface Window {
 
     // Settings & Account
     getAccountInfo: () => Promise<{ username?: string; phone?: string; firstName?: string; lastName?: string; error?: string }>;
+    getProfilePhoto: () => Promise<{ url?: string | null; firstName?: string; lastName?: string; phone?: string; error?: string }>;
     getStorageInfo: () => Promise<{ totalPhotos: number; totalSizeBytes: number; error?: string }>;
     clearLocalCache: () => Promise<{ success: boolean; clearedCount?: number; error?: string }>;
     getSessions: () => Promise<any[] | { error: string }>;
@@ -94,6 +95,8 @@ interface Window {
     copyToClipboard: (photoId: string) => Promise<{ success?: boolean; error?: string }>;
     showInFolder: (photoId: string) => Promise<{ success?: boolean; error?: string }>;
     requestVideo: (photoId: string) => Promise<{ url?: string; error?: string }>;
+    requestFullImage: (photoId: string) => Promise<{ url?: string; error?: string }>;
+    saveFile: (photoId: string) => Promise<{ success?: boolean; savedTo?: string; canceled?: boolean; error?: string }>;
     // PIN lock
     setPin: (pin: string) => Promise<{ success?: boolean; error?: string }>;
     clearPin: () => Promise<{ success: boolean }>;

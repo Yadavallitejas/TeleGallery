@@ -14,8 +14,10 @@
 
   /* Surfaces */
   --bg-app: #ffffff;
+  --bg-card: #ffffff;
   --bg-surface: #f8f9fa;
   --bg-surface-hover: #f1f3f4;
+  --bg-hover: #f1f3f4;
   --bg-overlay: rgba(0, 0, 0, 0.5);
 
   /* Borders */
@@ -51,8 +53,10 @@
 /* ── Dark theme ───────────────────────────────────────────────────────────── */
 [data-theme="dark"] {
   --bg-app: #1f1f1f;
+  --bg-card: #2d2d2d;
   --bg-surface: #2d2d2d;
   --bg-surface-hover: #3c3c3c;
+  --bg-hover: #3c3c3c;
   --border-color: #3c3c3c;
   --text-primary: #e8eaed;
   --text-secondary: #9aa0a6;

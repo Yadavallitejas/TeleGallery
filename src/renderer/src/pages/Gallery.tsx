@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Cloud, FolderPlus, X, Trash2, Image, Video, Heart } from 'lucide-react';
+import { Check, Cloud, FolderPlus, X, Trash2, Image, Video, Heart, Play } from 'lucide-react';
 
 import PhotoViewer, { Photo } from '../components/PhotoViewer';
 import AddToAlbumModal from '../components/AddToAlbumModal';
@@ -10,6 +10,12 @@ type FilterType = 'all' | 'photos' | 'videos' | 'favorites';
 const isVideoFile = (filename?: string) => {
   if (!filename) return false;
   return /\.(mp4|mov|avi|mkv|webm|m4v|wmv|flv|3gp)$/i.test(filename);
+};
+
+const columnConfig = {
+  small: { min: 120, max: 160 },
+  medium: { min: 200, max: 260 },
+  large: { min: 300, max: 400 }
 };
 
 export default function Gallery() {
@@ -22,12 +28,16 @@ export default function Gallery() {
   const [isAlbumModalOpen, setIsAlbumModalOpen] = useState(false);
   const [albumTargetPhotoId, setAlbumTargetPhotoId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
+  const [gridSize, setGridSize] = useState<'small' | 'medium' | 'large'>('medium');
   // Search query is owned by the single navbar search bar, read via URL param.
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get('q') ?? '';
 
   useEffect(() => {
     loadPhotos();
+    window.electronAPI.getSetting('grid_size').then(size => {
+      if (size) setGridSize(size as 'small' | 'medium' | 'large');
+    }).catch(() => {});
     const handleUploadComplete = window.electronAPI.onUploadComplete(() => {
       loadPhotos();
     });
@@ -94,6 +104,7 @@ export default function Gallery() {
         is_favorite: row.is_favorite === 1,
         local_thumb_path: row.local_thumb_path,
         isVideo: isVideoFile(row.filename || row.original_filename),
+        video_duration_sec: row.video_duration_sec || 0,
       });
     });
 
@@ -239,7 +250,14 @@ export default function Gallery() {
                 </div>
 
                 {/* Photo Grid — Google Photos style responsive */}
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-0.5">
+                <div 
+                  style={{ 
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(auto-fill, minmax(${columnConfig[gridSize].min}px, ${columnConfig[gridSize].max}px))`,
+                    gap: '2px',
+                    justifyContent: 'center'
+                  }}
+                >
                   {group.photos.map(photo => {
                     const isSelected = selectedIds.has(photo.id);
 
@@ -257,8 +275,9 @@ export default function Gallery() {
                           <img
                             src={photo.url}
                             alt={photo.filename || ''}
-                            className={`w-full h-full object-cover transition-all duration-300 ${
-                              isSelected ? 'scale-90 rounded-sm' : 'group-hover/photo:brightness-90'
+                            style={{ aspectRatio: '1/1', objectFit: 'cover', width: '100%' }}
+                            className={`transition-all duration-300 ${
+                              isSelected ? 'scale-90 rounded-sm' : ''
                             }`}
                             loading="lazy"
                             decoding="async"
@@ -275,11 +294,47 @@ export default function Gallery() {
                           </div>
                         )}
 
-                        {/* Video badge */}
+                        {/* Video overlays: play button + bottom info bar */}
                         {photo.isVideo && (
-                          <div className="absolute bottom-1.5 left-1.5 bg-black/60 rounded px-1 py-0.5 flex items-center gap-0.5">
-                            <Video size={10} className="text-white" />
-                          </div>
+                          <>
+                            {/* Centered play button */}
+                            <div
+                              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                              style={{ zIndex: 2 }}
+                            >
+                              <div
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: '50%',
+                                  background: 'rgba(0,0,0,0.55)',
+                                  backdropFilter: 'blur(4px)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  border: '1.5px solid rgba(255,255,255,0.3)',
+                                }}
+                              >
+                                <Play size={16} className="text-white" style={{ marginLeft: 2, fill: 'white' }} />
+                              </div>
+                            </div>
+                            {/* Bottom info bar: camera icon + duration */}
+                            <div
+                              className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-1.5 py-1"
+                              style={{
+                                background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 100%)',
+                                zIndex: 2,
+                                pointerEvents: 'none',
+                              }}
+                            >
+                              <Video size={10} className="text-white opacity-80" />
+                              {photo.video_duration_sec > 0 && (
+                                <span style={{ fontSize: 10, color: 'white', fontWeight: 600, letterSpacing: '0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                                  {Math.floor(photo.video_duration_sec / 60)}:{String(photo.video_duration_sec % 60).padStart(2, '0')}
+                                </span>
+                              )}
+                            </div>
+                          </>
                         )}
 
                         {/* Favorite badge */}
@@ -291,7 +346,7 @@ export default function Gallery() {
 
                         {/* Hover overlay (only when not selected) */}
                         {!isSelected && (
-                          <div className="absolute inset-0 bg-black/0 group-hover/photo:bg-black/10 transition-colors duration-150" />
+                          <div className="absolute inset-0 bg-black/0 group-hover/photo:bg-black/15 transition-colors duration-150 pointer-events-none" style={{ backdropFilter: 'brightness(0.85)', opacity: 0 }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0'} />
                         )}
 
                         {/* Selection overlay */}

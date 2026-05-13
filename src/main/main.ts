@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, Notification, safeStorage, session, shell, protocol, net, clipboard, nativeImage } from 'electron';
+﻿import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, Notification, safeStorage, session, shell, protocol, net, clipboard, nativeImage } from 'electron';
 import * as path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
@@ -6,6 +6,9 @@ import Store from 'electron-store';
 import { DatabaseService } from './services/DatabaseService';
 import * as dotenv from 'dotenv';
 import sharp from 'sharp';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
+if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
 import crypto from 'crypto';
 import type { FSWatcher } from 'chokidar';
 import { autoUpdater } from 'electron-updater';
@@ -540,6 +543,8 @@ app.whenReady().then(() => {
       let cacheDir: string;
       if (host === 'video') {
         cacheDir = require('path').join(app.getPath('userData'), 'videocache');
+      } else if (host === 'full') {
+        cacheDir = require('path').join(app.getPath('userData'), 'fullcache');
       } else {
         cacheDir = require('path').join(app.getPath('userData'), 'thumbcache');
       }
@@ -1002,6 +1007,7 @@ ipcMain.handle('tg-get-photos', () => {
         ? 'thumb://local/' + encodeURIComponent(require('path').basename(row.local_thumb_path))
         : null,
       date_taken_iso: new Date(row.date_taken * 1000).toISOString(),
+      video_duration_sec: row.video_duration_sec || 0,
     }));
   } catch (err) {
     console.error('Error fetching photos:', err);
@@ -1161,6 +1167,35 @@ async function runUploadQueue(filePaths: string[]) {
 const startUploadQueue = runUploadQueue;
 
 
+// ─── Video thumbnail generation using ffmpeg ─────────────────────────────────
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.wmv', '.flv', '.3gp']);
+
+async function getVideoDuration(videoPath: string): Promise<number> {
+  return new Promise((resolve) => {
+    (ffmpeg as any).ffprobe(videoPath, (err: Error, metadata: any) => {
+      if (err || !metadata || !metadata.format) return resolve(0);
+      resolve(metadata.format.duration || 0);
+    });
+  });
+}
+
+async function generateVideoThumb(videoPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    (ffmpeg as any)(videoPath)
+      .screenshots({
+        timestamps: ['10%'],
+        filename: require('path').basename(outputPath),
+        folder: require('path').dirname(outputPath),
+        size: '800x?',
+      })
+      .on('end', resolve)
+      .on('error', (err: Error) => {
+        console.warn('[ffmpeg] Video thumb failed:', err.message);
+        reject(err);
+      });
+  });
+}
+
 async function processAndUploadFile(filePath: string, channelEntity: any, index: MasterIndex) {
   const fileId = crypto.randomUUID();
   const fileName = path.basename(filePath);
@@ -1176,38 +1211,80 @@ async function processAndUploadFile(filePath: string, channelEntity: any, index:
     const thumbCacheDir = path.join(app.getPath('userData'), 'thumbcache');
     await fs.mkdir(thumbCacheDir, { recursive: true });
     const localThumbPath = path.join(thumbCacheDir, `${fileId}.jpg`);
+    const inputExt = path.extname(filePath).toLowerCase();
+    const isVideoUpload = VIDEO_EXTS.has(inputExt);
+    let videoDurationSec = 0;
 
-    try {
-      const metadata = await sharp(filePath).metadata();
-      width = metadata.width || 0;
-      height = metadata.height || 0;
-
-      // Extract EXIF DateTimeOriginal for accurate capture date
-      // sharp exposes raw EXIF data; parse the DateTimeOriginal tag if present
-      if (metadata.exif) {
+    if (isVideoUpload) {
+      // ── Video: extract a frame thumbnail with ffmpeg ──────────────────────
+      try {
+        await generateVideoThumb(filePath, localThumbPath);
+        // Get dimensions from the generated frame
         try {
-          // Parse EXIF buffer manually: look for DateTimeOriginal (0x9003) tag
-          // Format: 'YYYY:MM:DD HH:MM:SS'
-          const exifStr = metadata.exif.toString('binary');
-          const dtMatch = exifStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
-          if (dtMatch) {
-            const [, yr, mo, dy, hh, mm, ss] = dtMatch;
-            const exifDate = new Date(`${yr}-${mo}-${dy}T${hh}:${mm}:${ss}`);
-            if (!isNaN(exifDate.getTime()) && exifDate.getTime() < Date.now()) {
-              exifDateUnix = Math.floor(exifDate.getTime() / 1000);
-            }
-          }
-        } catch { /* ignore EXIF parse errors */ }
+          const frameMeta = await sharp(localThumbPath).metadata();
+          width = frameMeta.width || 0;
+          height = frameMeta.height || 0;
+        } catch { /* dimensions optional for video */ }
+        // Get video duration via ffprobe
+        videoDurationSec = await getVideoDuration(filePath).catch(() => 0);
+      } catch (e) {
+        console.warn(`[ffmpeg] Could not generate video thumb for ${filePath}`, e);
+        // Fallback: create a dark placeholder frame
+        try {
+          await sharp({ create: { width: 320, height: 180, channels: 3, background: { r: 30, g: 41, b: 59 } } })
+            .jpeg({ quality: 85 }).toFile(localThumbPath);
+        } catch { /* ignore */ }
       }
+      (processAndUploadFile as any).__lastThumbPath = localThumbPath;
+    } else {
+      // ── Image: sharp-based HQ thumbnail ──────────────────────────────────
+      try {
+        const metadata = await sharp(filePath).metadata();
+        width = metadata.width || 0;
+        height = metadata.height || 0;
 
-      await sharp(filePath)
-        .resize({ width: 400, height: 400, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toFile(localThumbPath);
-    } catch (e) {
-      console.warn(`Could not generate thumb for ${filePath}`, e);
-      // Fallback: use original as thumb
-      await fs.copyFile(filePath, localThumbPath).catch(() => {});
+        // Extract EXIF DateTimeOriginal for accurate capture date
+        if (metadata.exif) {
+          try {
+            const exifStr = metadata.exif.toString('binary');
+            const dtMatch = exifStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+            if (dtMatch) {
+              const [, yr, mo, dy, hh, mm, ss] = dtMatch;
+              const exifDate = new Date(`${yr}-${mo}-${dy}T${hh}:${mm}:${ss}`);
+              if (!isNaN(exifDate.getTime()) && exifDate.getTime() < Date.now()) {
+                exifDateUnix = Math.floor(exifDate.getTime() / 1000);
+              }
+            }
+          } catch { /* ignore EXIF parse errors */ }
+        }
+
+        // Detect document/screenshot: square-ish aspect + < 5 MB → lossless PNG
+        const fileSize = stat.size;
+        const aspectRatio = width > 0 && height > 0 ? width / height : 1;
+        const isDocumentLike = aspectRatio > 0.7 && aspectRatio < 1.4 && fileSize < 5 * 1024 * 1024;
+        const usePNG = isDocumentLike || inputExt === '.png';
+
+        if (usePNG) {
+          const thumbBuffer = await sharp(filePath)
+            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+            .png({ compressionLevel: 6 })
+            .toBuffer();
+          const localThumbPathPNG = localThumbPath.replace(/\.jpg$/, '.png');
+          await fs.writeFile(localThumbPathPNG, thumbBuffer);
+          (processAndUploadFile as any).__lastThumbPath = localThumbPathPNG;
+        } else {
+          const thumbBuffer = await sharp(filePath)
+            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 92, progressive: true, mozjpeg: true })
+            .toBuffer();
+          await fs.writeFile(localThumbPath, thumbBuffer);
+          (processAndUploadFile as any).__lastThumbPath = localThumbPath;
+        }
+      } catch (e) {
+        console.warn(`Could not generate thumb for ${filePath}`, e);
+        await fs.copyFile(filePath, localThumbPath).catch(() => {});
+        (processAndUploadFile as any).__lastThumbPath = localThumbPath;
+      }
     }
 
     // b. Upload ONLY the original file to Telegram (no separate thumb upload = no double message)
@@ -1246,14 +1323,16 @@ async function processAndUploadFile(filePath: string, channelEntity: any, index:
     };
 
     // d. Save to local SQLite (including local_thumb_path)
+    // Use the actual saved thumb path (may be .png for document-like images)
+    const actualThumbPath = (processAndUploadFile as any).__lastThumbPath ?? localThumbPath;
     const dbService = DatabaseService.getInstance();
     dbService.db.prepare(`
       INSERT INTO photos (
         id, telegram_message_id, file_id, thumb_file_id, filename, size_bytes,
-        width, height, date_taken, date_uploaded, is_favorite, is_deleted, deleted_at, local_thumb_path
+        width, height, date_taken, date_uploaded, is_favorite, is_deleted, deleted_at, local_thumb_path, video_duration_sec
       ) VALUES (
         @id, @telegram_message_id, @file_id, @thumb_file_id, @filename, @size_bytes,
-        @width, @height, @date_taken, @date_uploaded, @is_favorite, @is_deleted, @deleted_at, @local_thumb_path
+        @width, @height, @date_taken, @date_uploaded, @is_favorite, @is_deleted, @deleted_at, @local_thumb_path, @video_duration_sec
       )
     `).run({
       id: fileId,
@@ -1269,7 +1348,8 @@ async function processAndUploadFile(filePath: string, channelEntity: any, index:
       is_favorite: 0,
       is_deleted: 0,
       deleted_at: null,
-      local_thumb_path: localThumbPath,
+      local_thumb_path: actualThumbPath,
+      video_duration_sec: videoDurationSec,
     });
 
     // e. Append to Master Index (metadata only, no extra Telegram messages)
@@ -1437,7 +1517,7 @@ async function syncFromTelegram() {
       return { success: true, message: 'Up to date' };
     }
 
-    sendSyncProgress('Syncing metadataÃ¢â‚¬Â¦', 30);
+    sendSyncProgress('Syncing metadata…', 30);
     
     // Sync settings & albums via existing restore logic but quietly
     db.prepare("INSERT OR REPLACE INTO sync_state (key, value) VALUES ('theme', ?)").run(masterIndex.settings.theme);
@@ -1569,13 +1649,19 @@ ipcMain.handle('tg-get-albums', () => {
   try {
     const db = DatabaseService.getInstance().db;
     const rows = db.prepare(`
-      SELECT 
+      SELECT
         a.id, a.name, a.cover_photo_id, a.created_at, a.updated_at,
         COUNT(pa.photo_id) as photo_count,
-        p.local_thumb_path as cover_local_thumb
+        COALESCE(
+          p_cover.local_thumb_path,
+          (SELECT p2.local_thumb_path FROM photos p2
+           INNER JOIN photo_albums pa2 ON p2.id = pa2.photo_id
+           WHERE pa2.album_id = a.id AND p2.is_deleted = 0
+           LIMIT 1)
+        ) as cover_local_thumb
       FROM albums a
       LEFT JOIN photo_albums pa ON a.id = pa.album_id
-      LEFT JOIN photos p ON a.cover_photo_id = p.id
+      LEFT JOIN photos p_cover ON a.cover_photo_id = p_cover.id
       GROUP BY a.id
       ORDER BY a.created_at DESC
     `).all();
@@ -1599,14 +1685,11 @@ ipcMain.handle('tg-create-album', async (_event, name: string) => {
     const db = DatabaseService.getInstance().db;
     const now = Math.floor(Date.now() / 1000);
 
-    // Server-side dedup: reject if same name was created within the last 5 seconds
-    // Catches rapid-fire IPC calls that slip past the UI isSubmitting guard
-    const recentDuplicate = db.prepare(
-      'SELECT id FROM albums WHERE name = ? AND created_at >= ?'
-    ).get(trimmedName, now - 5) as { id: string } | undefined;
-    if (recentDuplicate) {
-      console.warn('[tg-create-album] Dedup: returning existing album', recentDuplicate.id);
-      return { success: true, albumId: recentDuplicate.id };
+    // Idempotent: if an album with this exact name already exists, return it
+    const existing = db.prepare('SELECT id FROM albums WHERE name = ?').get(trimmedName) as { id: string } | undefined;
+    if (existing) {
+      console.warn('[tg-create-album] Album already exists, returning existing:', existing.id);
+      return { success: true, albumId: existing.id };
     }
     
     db.prepare('INSERT INTO albums (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
@@ -1982,6 +2065,56 @@ ipcMain.handle('tg-empty-trash-item', async (_event, photoIds: string[]) => {
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Settings & Account IPC Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
+// ─── Download & cache Telegram profile photo ───────────────────────────────────
+ipcMain.handle('tg-get-profile-photo', async () => {
+  try {
+    await loadGramJS();
+    if (!tgClient || !tgClient.connected) return { error: 'Not connected' };
+
+    const me = await tgClient.getMe();
+    const userId = String(me.id);
+
+    // Cache path: userData/accounts/<userId>/profile.jpg
+    const accountDir = path.join(app.getPath('userData'), 'accounts', userId);
+    await fs.mkdir(accountDir, { recursive: true });
+    const cachePath = path.join(accountDir, 'profile.jpg');
+
+    // Serve cached version if it exists (don't re-download on every open)
+    try {
+      await fs.access(cachePath);
+      return {
+        url: 'file://' + cachePath.replace(/\\/g, '/'),
+        firstName: me.firstName,
+        lastName: me.lastName,
+        phone: me.phone ? '+' + me.phone : '',
+      };
+    } catch {}
+
+    // Download profile photo bytes
+    const photoBuffer = await tgClient.downloadProfilePhoto(me, { isBig: false });
+    if (photoBuffer && photoBuffer.length > 0) {
+      await fs.writeFile(cachePath, photoBuffer);
+      return {
+        url: 'file://' + cachePath.replace(/\\/g, '/'),
+        firstName: me.firstName,
+        lastName: me.lastName,
+        phone: me.phone ? '+' + me.phone : '',
+      };
+    }
+
+    // No profile photo
+    return {
+      url: null,
+      firstName: me.firstName,
+      lastName: me.lastName,
+      phone: me.phone ? '+' + me.phone : '',
+    };
+  } catch (err: any) {
+    console.error('[tg-get-profile-photo]', err);
+    return { error: err.message };
+  }
+});
+
 ipcMain.handle('tg-get-account-info', async () => {
   try {
     await loadGramJS();
@@ -2148,7 +2281,6 @@ ipcMain.handle('tg-remove-sync-folder', (_event, folderPath: string) => {
 
 ipcMain.handle('tg-download-thumb', async (_event, photoId: string, _fileId: string) => {
   try {
-    // Return existing local thumb if available
     const row = DatabaseService.getInstance().get<any>(
       'SELECT local_thumb_path FROM photos WHERE id = ?', photoId
     );
@@ -2158,6 +2290,62 @@ ipcMain.handle('tg-download-thumb', async (_event, photoId: string, _fileId: str
     }
     return { error: 'No local thumbnail available' };
   } catch (err: any) {
+    return { error: err.message };
+  }
+});
+
+// ─── Full-resolution image fetch: check fullcache → download from Telegram ────────
+
+ipcMain.handle('tg-request-full-image', async (_event, photoId: string) => {
+  try {
+    const row = DatabaseService.getInstance().get<any>(
+      'SELECT file_id, filename, local_thumb_path FROM photos WHERE id = ?', photoId
+    );
+    if (!row) return { error: 'Photo not found' };
+
+    const fullCacheDir = path.join(app.getPath('userData'), 'fullcache');
+    await fs.mkdir(fullCacheDir, { recursive: true });
+
+    // Derive file extension from original filename
+    const ext = path.extname(row.filename || 'img.jpg').toLowerCase() || '.jpg';
+    const outPath = path.join(fullCacheDir, `${photoId}${ext}`);
+
+    // 1. Already in fullcache — return immediately
+    try {
+      await fs.access(outPath);
+      return { url: 'thumb://full/' + encodeURIComponent(path.basename(outPath)), cached: true };
+    } catch { /* not cached yet */ }
+
+    // 2. Download from Telegram in background
+    if (!tgClient) {
+      const savedSession = store.get(STORE_KEY_SESSION, '') as string;
+      if (!savedSession) return { error: 'Not authenticated' };
+      tgClient = await getTelegramClient(savedSession).catch(() => null);
+      if (!tgClient) return { error: 'Could not connect to Telegram' };
+    }
+    await loadGramJS();
+
+    const inputCh = await getStorageChannel();
+    const result = await tgClient.invoke(new Api.channels.GetChannels({ id: [inputCh] }));
+    const channelEntity = result.chats[0];
+
+    const fileId = parseInt(row.file_id);
+    if (isNaN(fileId)) return { error: 'Invalid file ID' };
+
+    const messages = await tgClient.getMessages(channelEntity, { ids: [fileId] });
+    if (!messages || messages.length === 0 || !messages[0]?.media) {
+      return { error: 'File not found on Telegram' };
+    }
+
+    await tgClient.downloadMedia(messages[0], { outputFile: outPath });
+
+    // Verify written
+    const written = await fs.access(outPath).then(() => true).catch(() => false);
+    if (!written) return { error: 'Download failed — file not written' };
+
+    return { url: 'thumb://full/' + encodeURIComponent(path.basename(outPath)), cached: false };
+  } catch (err: any) {
+    console.error('[tg-request-full-image]', err);
     return { error: err.message };
   }
 });
@@ -2251,6 +2439,38 @@ ipcMain.handle('tg-copy-to-clipboard', async (_event, photoId: string) => {
 });
 
 // --- Show file in system file explorer ---
+
+// --- Save file to user-chosen location ---
+ipcMain.handle('tg-save-file', async (_event, photoId) => {
+  try {
+    const row = DatabaseService.getInstance().get(
+      'SELECT local_thumb_path, filename FROM photos WHERE id = ?', photoId
+    ) as any;
+    const ext = row && row.filename ? require('path').extname(row.filename) : '.jpg';
+    const fullCachePath = require('path').join(app.getPath('userData'), 'fullcache', photoId + ext);
+    let sourceFile = null;
+    try { require('fs').accessSync(fullCachePath); sourceFile = fullCachePath; } catch {}
+    if (!sourceFile && row && row.local_thumb_path) sourceFile = row.local_thumb_path;
+    if (!sourceFile) return { error: 'No local file available to save' };
+
+    const defaultName = (row && row.filename) ? row.filename : ('photo_' + photoId.slice(0, 8) + ext);
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      title: 'Save Photo',
+      defaultPath: require('path').join(app.getPath('downloads'), defaultName),
+      filters: [
+        { name: 'Images', extensions: ['jpg','jpeg','png','webp','gif','bmp'] },
+        { name: 'Videos', extensions: ['mp4','mov','avi','mkv','webm'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (canceled || !filePath) return { canceled: true };
+    require('fs').copyFileSync(sourceFile, filePath);
+    new Notification({ title: 'TeleGallery', body: 'Saved to ' + filePath }).show();
+    return { success: true, savedTo: filePath };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+});
 
 ipcMain.handle('tg-show-in-folder', async (_event, photoId: string) => {
   try {
@@ -2399,3 +2619,4 @@ ipcMain.handle('tg-verify-pin', (_event, pin: string) => {
     return { valid: false };
   }
 });
+

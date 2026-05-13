@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Settings & Account
   getAccountInfo: () => ipcRenderer.invoke('tg-get-account-info'),
+  getProfilePhoto: () => ipcRenderer.invoke('tg-get-profile-photo'),
   getStorageInfo: () => ipcRenderer.invoke('tg-get-storage-info'),
   clearLocalCache: () => ipcRenderer.invoke('tg-clear-local-cache'),
   getSessions: () => ipcRenderer.invoke('tg-get-sessions'),
@@ -127,11 +128,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => ipcRenderer.invoke('tg-check-for-updates'),
   openExternal: (url: string) => ipcRenderer.invoke('tg-open-external', url),
   downloadThumb: (photoId: string, fileId: string) => ipcRenderer.invoke('tg-download-thumb', photoId, fileId),
+  requestFullImage: (photoId: string) => ipcRenderer.invoke('tg-request-full-image', photoId),
   clearAndSwitchAccount: () => ipcRenderer.invoke('tg-clear-and-switch-account'),
   cleanupDuplicateMessages: () => ipcRenderer.invoke('tg-cleanup-duplicates'),
   copyToClipboard: (photoId: string) => ipcRenderer.invoke('tg-copy-to-clipboard', photoId),
   showInFolder: (photoId: string) => ipcRenderer.invoke('tg-show-in-folder', photoId),
   requestVideo: (photoId: string) => ipcRenderer.invoke('tg-request-video', photoId),
+  saveFile: (photoId: string) => ipcRenderer.invoke('tg-save-file', photoId),
 
   // ── PIN lock ─────────────────────────────────────────────────────────────
   setPin: (pin: string) => ipcRenderer.invoke('tg-set-pin', pin),

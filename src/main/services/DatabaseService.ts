@@ -79,6 +79,14 @@ export class DatabaseService {
             CREATE INDEX idx_photos_deleted_at ON photos(deleted_at);
           `);
         })();
+      },
+      // v3: Add video_duration_sec column
+      () => {
+        this.transaction(() => {
+          this.db.exec(`
+            ALTER TABLE photos ADD COLUMN video_duration_sec INTEGER DEFAULT 0;
+          `);
+        })();
       }
     ];
 
